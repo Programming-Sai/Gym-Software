@@ -46,3 +46,4 @@ def health():
         status="ok" if db_status else "db_error",
         db_connected=db_status
     )
+    
