@@ -2,13 +2,14 @@ from fastapi import APIRouter
 from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
+from app.core.database import DATABASE_URL 
 from pydantic import BaseModel
 
 load_dotenv()
 
 router = APIRouter()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/gymdb")
+# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/gymdb")
 
 def test_db_connection():
     try:
