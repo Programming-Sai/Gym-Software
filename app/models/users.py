@@ -49,6 +49,12 @@ class User(Base):
     # Relationships
     profile_file = relationship("File", foreign_keys=[profile_file_id])
     subscription_tier = relationship("SubscriptionTier", foreign_keys=[current_subscription_tier_id])
+    checkins = relationship(
+        "Checkin",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
     
     # Only for gym_owner and dietician roles
     verification_applications = relationship("VerificationApplication", 
@@ -63,3 +69,18 @@ class User(Base):
                                      foreign_keys="ClientAssignment.user_id",
                                      back_populates="user",
                                      uselist=False)
+
+
+    # Messages
+    sent_messages = relationship(
+        "Message",
+        back_populates="sender",
+        foreign_keys="Message.sender_id",
+        cascade="all, delete-orphan"
+    )
+    received_messages = relationship(
+        "Message",
+        back_populates="receiver",
+        foreign_keys="Message.receiver_id",
+        cascade="all, delete-orphan"
+    )

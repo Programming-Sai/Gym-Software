@@ -14,6 +14,8 @@ from sqlalchemy import (
 )
 from uuid import uuid4
 from app.core.database import Base
+from sqlalchemy.orm import relationship
+
 
 
 class Exercise(Base):
@@ -89,6 +91,8 @@ class WorkoutSession(Base):
 
     started_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     ended_at = Column(TIMESTAMP, nullable=True)
+    gym = relationship("Gym", back_populates="workout_sessions")
+
 
 
 

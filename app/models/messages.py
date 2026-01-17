@@ -9,8 +9,8 @@ from sqlalchemy import (
     Index,
 )
 from uuid import uuid4
+from sqlalchemy.orm import relationship
 from app.core.database import Base
-
 
 class Message(Base):
     __tablename__ = "messages"
@@ -40,6 +40,10 @@ class Message(Base):
     )
 
     read_at = Column(TIMESTAMP, nullable=True)
+
+    # ⚡ ADD RELATIONSHIPS
+    sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
+    receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")
 
     __table_args__ = (
         Index("ix_messages_sender", "sender_id"),

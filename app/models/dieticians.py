@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Enum, TIMESTAMP, Text, JSON, Integer, DECIMAL, func, ForeignKey
 from uuid import uuid4
 from app.core.database import Base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 
 class Dietician(Base):
     __tablename__ = "dieticians"
@@ -46,19 +46,14 @@ class Dietician(Base):
                           foreign_keys="ClientAssignment.dietician_id",
                           back_populates="dietician")
     
-    # Messages
-    sent_messages = relationship("Message", 
-                                foreign_keys="Message.sender_id",
-                                primaryjoin="Dietician.user_id==Message.sender_id",
-                                back_populates="sender")
-    received_messages = relationship("Message", 
-                                    foreign_keys="Message.receiver_id",
-                                    primaryjoin="Dietician.user_id==Message.receiver_id",
-                                    back_populates="receiver")
     
-    ratings = relationship("Rating",
-                      primaryjoin="and_(Rating.target_type=='dietician', Rating.target_id==Dietician.dietician_id)",
-                      cascade="all, delete-orphan")
+    
+    ratings = relationship(
+        "Rating",
+        primaryjoin="and_(Rating.target_type=='dietician', foreign(Rating.target_id)==Dietician.dietician_id)",
+        cascade="all, delete-orphan"
+    )
+
 
 
 class DieticianDocument(Base):

@@ -12,6 +12,8 @@ from sqlalchemy import (
 )
 from uuid import uuid4
 from app.core.database import Base
+from sqlalchemy.orm import relationship
+
 
 
 class Checkin(Base):
@@ -30,6 +32,10 @@ class Checkin(Base):
         ForeignKey("gyms.gym_id", ondelete="SET NULL"),
         nullable=True,  # optional for home workouts
     )
+
+     # Relationships
+    gym = relationship("Gym", back_populates="checkins")
+    user = relationship("User", back_populates="checkins")
 
     qr_nonce = Column(String, unique=True, nullable=False)
     qr_issued_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)

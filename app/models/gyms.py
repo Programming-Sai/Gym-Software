@@ -1,7 +1,11 @@
 from sqlalchemy import Column, String, Enum, Boolean, TIMESTAMP, DECIMAL, Text, JSON, Integer, func, ForeignKey
 from uuid import uuid4
 from app.core.database import Base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
+from sqlalchemy import and_
+from app.models.ratings import Rating
+
+
 
 class Gym(Base):
     __tablename__ = "gyms"
@@ -56,9 +60,14 @@ class Gym(Base):
     gym_photos = relationship("GymPhoto", back_populates="gym", cascade="all, delete-orphan")
     
     # Other relationships
-    ratings = relationship("Rating", 
-                      primaryjoin="and_(Rating.target_type=='gym', Rating.target_id==Gym.gym_id)",
-                      cascade="all, delete-orphan")
+    ratings = relationship(
+        Rating,
+        primaryjoin=and_(
+            foreign(Rating.target_id) == gym_id,
+            Rating.target_type == "gym"
+        ),
+        viewonly=True
+    )
     staff = relationship("GymStaff", back_populates="gym", cascade="all, delete-orphan")
     checkins = relationship("Checkin", back_populates="gym", cascade="all, delete-orphan")
     favorite_users = relationship("UserFavoriteGym", back_populates="gym", cascade="all, delete-orphan")
