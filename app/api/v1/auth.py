@@ -9,9 +9,20 @@ from app.core.otp_service import generate_unique_otp
 # from app.services.email_service import send_email  # implement this separately
 from app.schemas.otp import VerifyEmailRequest, ResendOTPRequest
 from app.services.auth_service import verify_email, resend_verification
-
+from app.schemas.login import LoginRequest, LoginResponse
+from app.services.auth_service import login_user
+from app.core.dependencies import get_current_user, get_db
+from fastapi import Depends, APIRouter
 
 router = APIRouter()
+
+@router.post("/signin", response_model=LoginResponse)
+def login(
+    data: LoginRequest,
+    db = Depends(get_db)
+):
+    return login_user(db, data.email, data.password)
+
 
 @router.post("/signup", response_model=SignupResponse)
 def signup(data: SignupRequest, db: Session = Depends(get_db)):
@@ -70,3 +81,8 @@ def resend_verification_endpoint(request: ResendOTPRequest, db: Session = Depend
     
     code = resend_verification(db, user)
     return {"otp": code}  # MVP returns OTP directly
+
+
+@router.get("/me")
+def me(user = Depends(get_current_user)):
+    return user

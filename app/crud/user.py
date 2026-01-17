@@ -12,3 +12,9 @@ def mark_email_verified(db: Session, user_id: str):
         db.refresh(user)
         return user
     return None
+
+def get_user_by_email(db, email: str):
+    return db.query(User).filter(User.email == email).first()
+
+def get_user_by_id(db, user_id: str):
+    return db.query(User).filter(User.user_id == user_id).first()
