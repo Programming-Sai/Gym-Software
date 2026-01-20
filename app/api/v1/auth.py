@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.models.users import User
 from app.schemas.auth import SignupRequest, SignupResponse
+from app.schemas.users import UserMeResponse
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.core.otp_service import generate_unique_otp
@@ -10,14 +11,14 @@ from app.core.otp_service import generate_unique_otp
 from app.schemas.otp import VerifyEmailRequest, ResendOTPRequest
 from app.services.auth_service import verify_email, resend_verification
 from app.schemas.login import LoginRequest, LoginResponse
-from app.services.auth_service import login_user
+from app.services.auth_service import login_user, refresh_access_token, logout
 from app.core.dependencies import get_current_user, get_db
 from fastapi import Depends, APIRouter
 
-router = APIRouter()
+router = APIRouter(tags=["Auth"])
 
-@router.post("/signin", response_model=LoginResponse)
-def login(
+@router.post("/signin",response_model=LoginResponse)
+def signin(
     data: LoginRequest,
     db = Depends(get_db)
 ):
@@ -64,14 +65,14 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/verify-email")
+@router.post("/verify-email", )
 def verify_email_endpoint(request: VerifyEmailRequest, db: Session = Depends(get_db)):
     success, msg = verify_email(db, request.email, request.code)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"message": msg}
 
-@router.post("/resend-verification")
+@router.post("/resend-verification",)
 def resend_verification_endpoint(request: ResendOTPRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
     if not user:
@@ -83,6 +84,15 @@ def resend_verification_endpoint(request: ResendOTPRequest, db: Session = Depend
     return {"otp": code}  # MVP returns OTP directly
 
 
-@router.get("/me")
+@router.get("/me", response_model=UserMeResponse)
 def me(user = Depends(get_current_user)):
     return user
+
+@router.post("/refresh")
+def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+    return refresh_access_token(db, refresh_token)
+
+@router.post("/logout")
+def logout_user(refresh_token: str, db: Session = Depends(get_db)):
+    logout(db, refresh_token)
+    return {"message": "Logged out successfully"}

@@ -1,24 +1,34 @@
-# Start simple - you can expand later
-from enum import Enum
+# app/schemas/user.py
 from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from typing import Optional
+from enum import Enum
 
 class UserRole(str, Enum):
     GYM_USER = "gym_user"
     DIETICIAN = "dietician"
     GYM_OWNER = "gym_owner"
-    ADMIN = "admin"  # Even though no signup, needed for model
+    ADMIN = "admin"
 
 class UserStatus(str, Enum):
     PENDING_VERIFICATION = "pending_verification"
     ACTIVE = "active"
-    LIMITED = "limited"  # For dieticians/gym_owners waiting admin approval
+    LIMITED = "limited"
     SUSPENDED = "suspended"
 
-
-
-class UserCreate(BaseModel):
+class UserMeResponse(BaseModel):
+    user_id: str
     email: EmailStr
-    password: str  # Frontend validated, we'll hash it
     full_name: str
-    phone_number: str  # Frontend validated format
+    phone_number: Optional[str]
     role: UserRole
+    status: UserStatus
+    email_verified: bool
+    phone_verified: bool
+    profile_file_id: Optional[str]
+    current_subscription_tier_id: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True  # Important for SQLAlchemy models
