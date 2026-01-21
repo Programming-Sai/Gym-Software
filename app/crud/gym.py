@@ -3,6 +3,9 @@ from sqlalchemy import String, or_, and_, func, cast
 from app.models.gyms import Gym
 from app.schemas.gyms import GymCreate
 from typing import Optional, List, Tuple
+from app.models.users import User
+from app.models.relationships import GymStaff
+
 
 def create_gym(db: Session, owner_id: str, gym_data: GymCreate) -> Gym:
     gym = Gym(owner_id=owner_id, **gym_data.dict())
@@ -105,3 +108,79 @@ def search_gyms(db: Session, q: str, skip: int = 0, limit: int = 10) -> Tuple[Li
     total = query.count()
     gyms = query.offset(skip).limit(limit).all()
     return gyms, total
+
+
+def list_gym_staff(db: Session, gym_id: str):
+    return (
+        db.query(GymStaff)
+        .filter(GymStaff.gym_id == gym_id)
+        .all()
+    )
+
+
+def add_staff_to_gym(
+    db: Session,
+    gym_id: str,
+    user_id: str,
+    role: str,
+    assigned_classes: str | None = None,
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise ValueError("Gym not found")
+
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise ValueError("User not found")
+
+    # ❗ Business rule: only active users can be staff
+    if user.status != "active":
+        raise ValueError("User is not active")
+
+    existing = (
+        db.query(GymStaff)
+        .filter(
+            GymStaff.gym_id == gym_id,
+            GymStaff.user_id == user_id,
+        )
+        .first()
+    )
+    if existing:
+        raise ValueError("User already staff in this gym")
+
+    staff = GymStaff(
+        gym_id=gym_id,
+        user_id=user_id,
+        role=role,
+        assigned_classes=assigned_classes,
+    )
+
+    db.add(staff)
+    db.commit()
+    db.refresh(staff)
+    return staff
+
+
+def remove_staff_from_gym(db: Session, gym_id: str, staff_id: str):
+    staff = (
+        db.query(GymStaff)
+        .filter(
+            GymStaff.staff_id == staff_id,
+            GymStaff.gym_id == gym_id,
+        )
+        .first()
+    )
+
+    if not staff:
+        raise ValueError("Staff member not found")
+
+    db.delete(staff)
+    db.commit()
+
+
+def get_gym_by_id(db: Session, gym_id: str):
+    return (
+        db.query(Gym)
+        .filter(Gym.gym_id == gym_id)
+        .first()
+    )

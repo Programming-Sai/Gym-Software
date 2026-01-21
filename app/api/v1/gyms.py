@@ -1,11 +1,12 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from app.models.gyms import GymPhoto
-from app.schemas.gyms import GymCreate, GymDocumentCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse
+from app.schemas.gyms import GymCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse, GymStaffCreate, GymStaffRead, GymStaffListResponse
 from app.core.dependencies import get_db, get_current_user
-from app.crud.gym import create_gym, get_gym, update_gym, delete_gym, get_gyms, search_gyms
+from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_gym, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
 from app.crud.gym_media import add_or_replace_gym_photo, list_gym_photos, delete_gym_photo, add_or_replace_gym_document, list_gym_documents, delete_gym_document
+
+
 
 
 router = APIRouter(tags=["Gyms"])
@@ -202,3 +203,68 @@ def remove_gym_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+
+@router.get("/{gym_id}/staff", response_model=GymStaffListResponse)
+def get_gym_staff(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    if current_user.role != "gym_owner" or gym.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    staff = list_gym_staff(db, gym_id)
+    return {"staff": staff}
+
+
+
+@router.post("/{gym_id}/staff", response_model=GymStaffRead)
+def add_gym_staff(
+    gym_id: str,
+    payload: GymStaffCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    if current_user.role != "gym_owner" or gym.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        return add_staff_to_gym(
+            db=db,
+            gym_id=gym_id,
+            user_id=payload.user_id,
+            role=payload.role,
+            assigned_classes=payload.assigned_classes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/{gym_id}/staff/{staff_id}")
+def delete_gym_staff(
+    gym_id: str,
+    staff_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    if current_user.role != "gym_owner" or gym.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        remove_staff_from_gym(db, gym_id, staff_id)
+        return {"detail": "Staff removed successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
