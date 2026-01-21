@@ -1,6 +1,8 @@
+from fastapi import UploadFile
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict
 from uuid import UUID
+from enum import Enum  
 
 class GymBase(BaseModel):
     name: str
@@ -46,8 +48,6 @@ class GymResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
-
 class GymListResponse(BaseModel):
     gyms: List[GymResponse]
     total: int
@@ -67,3 +67,50 @@ class GymUpdate(BaseModel):
     facilities: Optional[List[str]]
     capacity: Optional[int]
     opening_hours: Optional[Dict[str, str]] 
+
+
+class GymPhotoCreate(BaseModel):
+    is_primary: bool = False  # we still accept this
+
+class GymDocumentType(str, Enum):
+    business_license = "business_license"
+    tax_id = "tax_id"
+    proof_of_ownership = "proof_of_ownership"
+    other = "other"
+
+class GymDocumentCreate(BaseModel):
+    document_type: GymDocumentType
+
+class FileResponse(BaseModel):
+    file_id: str
+    original_filename: str
+    extension: str
+    mime_type: str
+    storage_url: str
+    storage_key: str
+    file_type: str
+    purpose: str
+
+    class Config:
+        orm_mode = True
+
+
+class GymPhotoResponse(BaseModel):
+    gym_photo_id: str
+    gym_id: str
+    is_primary: bool
+    display_order: int
+    file: FileResponse
+
+    class Config:
+        orm_mode = True
+
+
+class GymDocumentResponse(BaseModel):
+    gym_document_id: str
+    gym_id: str
+    document_type: str
+    file: FileResponse
+
+    class Config:
+        orm_mode = True

@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     OTP_LENGTH: int = 6
     OTP_EXPIRE_MINUTES: int = 10
 
+    CLOUDINARY_CLOUD_NAME: str 
+    CLOUDINARY_API_KEY: str
+    CLOUDINARY_API_SECRET: str 
+    CLOUDINARY_URL: str | None = None
+
     class Config:
         env_file = ".env"
 
