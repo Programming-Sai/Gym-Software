@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.files import File
 from uuid import uuid4
 
-MEDIA_PROJECT_FOLDER="gym/"
+MEDIA_PROJECT_FOLDER="gym"
 
 
 def create_file_record(

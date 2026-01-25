@@ -42,9 +42,15 @@ class User(Base):
         ForeignKey("subscription_tiers.tier_id", ondelete="SET NULL"),
         nullable=True
     )
+    face_file_id = Column(
+        String,
+        ForeignKey("files.file_id", ondelete="SET NULL"),
+        nullable=True
+    )
 
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+    face_registered_at = Column(TIMESTAMP, nullable=True)
 
     # Relationships
     profile_file = relationship("File", foreign_keys=[profile_file_id])
@@ -84,3 +90,5 @@ class User(Base):
         foreign_keys="Message.receiver_id",
         cascade="all, delete-orphan"
     )
+    face_file = relationship("File", foreign_keys=[face_file_id])
+

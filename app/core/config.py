@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str 
     CLOUDINARY_URL: str | None = None
 
+    FACE_API_SECRET: str 
+    FACE_API_KEY: str 
+
     class Config:
         env_file = ".env"
 

@@ -144,3 +144,16 @@ class GymStaffRead(BaseModel):
 
 class GymStaffListResponse(BaseModel):
     staff: List[GymStaffRead]
+
+
+
+class GymQRCodeOut(BaseModel):
+    qr_nonce: str
+    file_url: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+

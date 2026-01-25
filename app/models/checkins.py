@@ -37,7 +37,7 @@ class Checkin(Base):
     gym = relationship("Gym", back_populates="checkins")
     user = relationship("User", back_populates="checkins")
 
-    qr_nonce = Column(String, unique=True, nullable=False)
+    qr_nonce = Column(String, nullable=False)
     qr_issued_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     status = Column(
@@ -45,6 +45,9 @@ class Checkin(Base):
         nullable=False,
         server_default="provisional",
     )
+
+    client_lat = Column(Float, nullable=True)
+    client_lng = Column(Float, nullable=True)
 
     confirmed_at = Column(TIMESTAMP, nullable=True)
     rejected_reason = Column(Text, nullable=True)

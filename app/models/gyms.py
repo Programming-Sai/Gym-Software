@@ -58,7 +58,9 @@ class Gym(Base):
     
     # File relationships
     gym_photos = relationship("GymPhoto", back_populates="gym", cascade="all, delete-orphan")
-    
+    # Add this relationship inside Gym class
+    qr_code = relationship("GymQRCode", back_populates="gym", uselist=False)
+
     # Other relationships
     ratings = relationship(
         Rating,
@@ -116,3 +118,17 @@ class GymDocument(Base):
 
 
 
+class GymQRCode(Base):
+    __tablename__ = "gym_qr_codes"
+
+    qr_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    gym_id = Column(String, ForeignKey("gyms.gym_id", ondelete="CASCADE"), nullable=False, unique=True)
+    qr_nonce = Column(String, unique=True, nullable=False)
+    file_id = Column(String, ForeignKey("files.file_id", ondelete="SET NULL"), nullable=True)  # optional
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    rotated_at = Column(TIMESTAMP, nullable=True)
+
+    # Relationships
+    gym = relationship("Gym")
+    file = relationship("File")

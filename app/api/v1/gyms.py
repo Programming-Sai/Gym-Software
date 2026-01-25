@@ -1,11 +1,14 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from app.schemas.gyms import GymCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse, GymStaffCreate, GymStaffRead, GymStaffListResponse
-from app.core.dependencies import get_db, get_current_user
+from app.schemas.gyms import GymCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse, GymStaffCreate, GymStaffRead, GymStaffListResponse, GymQRCodeOut
+from app.core.dependencies import get_db, get_current_user, require_gym_owner
 from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_gym, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
 from app.crud.gym_media import add_or_replace_gym_photo, list_gym_photos, delete_gym_photo, add_or_replace_gym_document, list_gym_documents, delete_gym_document
-
+from app.crud import gym_qr_code as crud
+from app.schemas.checkins import CheckinRequest, CheckinResponse
+# from app.crud.checkins import create_provisional_checkin
+from app.services.checkin_service import perform_checkin
 
 
 
@@ -268,3 +271,64 @@ def delete_gym_staff(
         return {"detail": "Staff removed successfully"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+
+
+
+@router.post("/{gym_id}/qr", response_model=GymQRCodeOut)
+def create_or_rotate_gym_qr(gym_id: str, db: Session = Depends(get_db), user=Depends(require_gym_owner)):
+    """
+    Generate a new QR code for the gym. Rotates old QR if exists.
+    """
+    qr = crud.create_gym_qr_code(db, gym_id)
+    return GymQRCodeOut(
+        qr_nonce=qr.qr_nonce,
+        file_url=qr.file.storage_url if qr.file else None,
+        is_active=qr.is_active,
+        created_at=qr.created_at
+    )
+
+@router.get("/{gym_id}/qr", response_model=GymQRCodeOut)
+def get_gym_qr(gym_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve active QR code for gym.
+    """
+    qr = crud.get_gym_qr_code(db, gym_id)
+    if not qr:
+        raise HTTPException(status_code=404, detail="QR code not found")
+    return GymQRCodeOut(
+        qr_nonce=qr.qr_nonce,
+        file_url=qr.file.storage_url if qr.file else None,
+        is_active=qr.is_active,
+        created_at=qr.created_at
+    )
+
+
+@router.post("/{gym_id}/checkin", response_model=CheckinResponse)
+def gym_checkin(
+    gym_id: str,
+    payload: CheckinRequest,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    checkin = perform_checkin(
+        db,
+        user=user,
+        gym_id=gym_id,
+        qr_nonce=payload.qr_nonce,
+        face_image_base64=payload.face_image_base64,
+        client_lat=payload.client_lat,
+        client_lng=payload.client_lng,
+    )
+
+    return CheckinResponse(
+        checkin_id=checkin.checkin_id,
+        status=checkin.status,
+        face_score=checkin.face_score,
+        rejected_reason=checkin.rejected_reason,
+        created_at=checkin.created_at,
+        confirmed_at=checkin.confirmed_at,
+    )
+
+

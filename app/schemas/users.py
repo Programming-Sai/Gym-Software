@@ -32,3 +32,12 @@ class UserMeResponse(BaseModel):
 
     class Config:
         from_attributes = True  # Important for SQLAlchemy models
+
+
+class RegisterFaceResponse(BaseModel):
+    message: str
+    registered_at: datetime
+
+class UserFaceStatusResponse(BaseModel):
+    has_face: bool
+    registered_at: Optional[datetime]

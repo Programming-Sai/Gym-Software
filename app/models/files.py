@@ -29,6 +29,7 @@ class File(Base):
             "workout_media",
             "announcement_media",
             "other",
+            "gym_qr_code",
             name="file_purposes",
         ),
         nullable=False,
