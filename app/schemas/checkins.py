@@ -17,3 +17,15 @@ class CheckinResponse(BaseModel):
     rejected_reason: Optional[str] = None
     created_at: datetime
     confirmed_at: Optional[datetime]
+
+
+class CheckinListResponse(BaseModel):
+    checkin_id: str
+    gym_id: Optional[str]
+    status: str
+    face_score: Optional[float]
+    created_at: datetime
+    confirmed_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

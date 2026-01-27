@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from app.models.checkins import Checkin
-from app.models.gyms import GymQRCode
+from app.models.gyms import Gym, GymQRCode
 
 
 PROVISIONAL_EXPIRY_MINUTES = 5
@@ -65,3 +65,31 @@ def create_provisional_checkin(
     db.refresh(checkin)
 
     return checkin
+
+
+def get_user_checkins(
+    db: Session,
+    target_user_id: str,
+    *,
+    viewer,
+):
+    q = db.query(Checkin).filter(Checkin.user_id == target_user_id)
+
+    if viewer.role == "gym_owner":
+        owned_gym_ids = (
+            db.query(Gym.gym_id)
+            .filter(Gym.owner_id == viewer.user_id)
+            .subquery()
+        )
+        q = q.filter(Checkin.gym_id.in_(owned_gym_ids))
+
+    return q.order_by(Checkin.created_at.desc()).all()
+
+
+def get_gym_checkins(db: Session, gym_id: str):
+    return (
+        db.query(Checkin)
+        .filter(Checkin.gym_id == gym_id)
+        .order_by(Checkin.created_at.desc())
+        .all()
+    )

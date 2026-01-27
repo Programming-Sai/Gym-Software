@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from app.crud.favorites import toggle_favorite_gym
 from app.schemas.gyms import GymCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse, GymStaffCreate, GymStaffRead, GymStaffListResponse, GymQRCodeOut
 from app.core.dependencies import get_db, get_current_user, require_gym_owner
 from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_gym, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
@@ -330,5 +331,18 @@ def gym_checkin(
         created_at=checkin.created_at,
         confirmed_at=checkin.confirmed_at,
     )
+
+
+@router.post("/{gym_id}/favorite")
+def favorite_gym(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    favorited = toggle_favorite_gym(db, user.user_id, gym_id)
+    db.commit()
+
+    return {"gym_id": gym_id, "favorited": favorited}
+
 
 
