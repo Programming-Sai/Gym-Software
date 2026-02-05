@@ -18,7 +18,7 @@ def get_dietician_info(dietician_id: str, db: Session = Depends(get_db)):
             detail="Dietician profile not found"
         )
 
-    if dietician.status == "active":
+    if dietician.status != "active":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dietician not verified"
