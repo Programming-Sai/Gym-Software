@@ -9,8 +9,6 @@ def compare_faces(stored_image_url: str, image_base64_2: str) -> float:
     Returns similarity score.
     Raises exception on failure.
     """
-    print("\n\n\n\n", settings.FACE_API_KEY)
-    print(settings.FACE_API_SECRET, "\n\n\n\n")
 
     payload = {
         "api_key": settings.FACE_API_KEY,

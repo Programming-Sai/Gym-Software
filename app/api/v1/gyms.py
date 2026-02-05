@@ -8,7 +8,18 @@ from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_
 from app.crud.gym_media import add_or_replace_gym_photo, list_gym_photos, delete_gym_photo, add_or_replace_gym_document, list_gym_documents, delete_gym_document
 from app.crud import gym_qr_code as crud
 from app.schemas.checkins import CheckinRequest, CheckinResponse
-# from app.crud.checkins import create_provisional_checkin
+
+from app.models.announcements import Announcement
+from app.schemas.announcements import (
+    AnnouncementCreate,
+    AnnouncementResponse,
+    AnnouncementUpdateRequest
+)
+from app.crud.announcements import (
+    create_announcement,
+    list_published_announcements_for_gym
+)
+
 from app.services.checkin_service import perform_checkin
 
 
@@ -343,6 +354,100 @@ def favorite_gym(
     db.commit()
 
     return {"gym_id": gym_id, "favorited": favorited}
+
+
+
+@router.post("/{gym_id}/announcements", response_model=AnnouncementResponse)
+def create_gym_announcement(
+    gym_id: str,
+    payload: AnnouncementCreate,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    announcement = Announcement(
+        created_by=user.user_id,
+        gym_id=gym_id,
+        target_type="gym",
+        title=payload.title,
+        content=payload.content,
+        audience=payload.audience,
+        status=payload.status,
+        publish_at=payload.publish_at,
+        expires_at=payload.expires_at,
+        is_important=payload.is_important,
+    )
+
+    announcement = create_announcement(db, announcement)
+
+    return AnnouncementResponse(
+        announcement_id=announcement.announcement_id,
+        title=announcement.title,
+        content=announcement.content,
+        audience=announcement.audience,
+        is_important=announcement.is_important,
+        created_at=announcement.created_at,
+        is_read=False,
+    )
+
+@router.get("/{gym_id}/announcements", response_model=list[AnnouncementResponse])
+def list_gym_announcements(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    rows = list_published_announcements_for_gym(
+        db,
+        gym_id=gym_id,
+        user_id=user.user_id
+    )
+
+    response = []
+    for announcement, read_id in rows:
+        response.append(
+            AnnouncementResponse(
+                announcement_id=announcement.announcement_id,
+                title=announcement.title,
+                content=announcement.content,
+                audience=announcement.audience,
+                is_important=announcement.is_important,
+                created_at=announcement.created_at,
+                is_read=read_id is not None,
+            )
+        )
+
+    return response
+
+
+@router.patch("/{gym_id}/announcements/{announcement_id}", response_model=AnnouncementResponse)
+def update_gym_announcement(
+    gym_id: str,
+    announcement_id: str,
+    payload: AnnouncementUpdateRequest,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    announcement = db.query(Announcement).filter(
+        Announcement.announcement_id == announcement_id,
+        Announcement.gym_id == gym_id
+    ).first()
+
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    if announcement.status != "draft":
+        raise HTTPException(status_code=400, detail="Only drafts can be updated")
+
+    if not (user.role in {"gym_owner", "admin"} or user.user_id == announcement.created_by):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(announcement, field, value)
+
+    db.commit()
+    db.refresh(announcement)
+    return announcement
+
+
 
 
 

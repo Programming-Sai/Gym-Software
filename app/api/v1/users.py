@@ -15,6 +15,8 @@ from app.crud.user import (
     register_or_replace_user_face,
     get_user_face_status,
 )
+from app.crud.announcements import mark_announcement_as_read
+
 
 router = APIRouter(tags=["Users"])
 
@@ -70,3 +72,16 @@ def list_user_favorites(
         raise HTTPException(status_code=403, detail="Access denied")
 
     return get_user_favorites(db, user_id)
+
+@router.post("/announcements/{announcement_id}/read")
+def mark_announcement_read(
+    announcement_id: str,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    mark_announcement_as_read(
+        db,
+        announcement_id=announcement_id,
+        user_id=user.user_id
+    )
+    return {"status": "ok"}

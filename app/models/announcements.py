@@ -85,8 +85,6 @@ class AnnouncementRead(Base):
     announcement = relationship("Announcement", back_populates="reads")
     user = relationship("User")
     
-    # Ensure a user reads an announcement only once
-    # FIXED: Use UniqueConstraint instead of func.unique
     __table_args__ = (
         UniqueConstraint('announcement_id', 'user_id', name='uq_announcement_read_user'),
     )

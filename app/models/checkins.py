@@ -46,9 +46,6 @@ class Checkin(Base):
         server_default="provisional",
     )
 
-    client_lat = Column(Float, nullable=True)
-    client_lng = Column(Float, nullable=True)
-
     confirmed_at = Column(TIMESTAMP, nullable=True)
     rejected_reason = Column(Text, nullable=True)
     face_score = Column(Float, nullable=True)
