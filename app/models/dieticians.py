@@ -3,6 +3,8 @@ from uuid import uuid4
 from app.core.database import Base
 from sqlalchemy.orm import relationship, foreign
 
+from app.models.enums import DocumentTypeEnum
+
 class Dietician(Base):
     __tablename__ = "dieticians"
 
@@ -63,10 +65,7 @@ class DieticianDocument(Base):
     document_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     dietician_id = Column(String, ForeignKey("dieticians.dietician_id", ondelete="CASCADE"), nullable=False)
     file_id = Column(String, ForeignKey("files.file_id", ondelete="CASCADE"), nullable=False)
-    document_type = Column(
-        Enum("certification", "id", "education", "other", name="dietician_document_types"),
-        nullable=False
-    )
+    document_type = Column(DocumentTypeEnum, nullable=False)
     
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     

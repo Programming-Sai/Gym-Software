@@ -3,6 +3,8 @@ from uuid import uuid4
 from app.core.database import Base
 from sqlalchemy.orm import relationship
 
+from app.models.enums import DocumentTypeEnum
+
 class VerificationApplication(Base):
     """Central verification system for dieticians and gym owners ONLY"""
     __tablename__ = "verification_applications"
@@ -67,10 +69,7 @@ class VerificationDocument(Base):
         ForeignKey("files.file_id", ondelete="CASCADE"), 
         nullable=False
     )
-    document_type = Column(
-        Enum("business_license", "id", "certification", "proof_of_ownership", "gym_photos", "other", name="verification_document_types"),
-        nullable=False
-    )
+    document_type = Column(DocumentTypeEnum, nullable=False)
     
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     
