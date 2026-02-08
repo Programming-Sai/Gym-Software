@@ -117,3 +117,17 @@ def create_verification_request(
     db.commit()
     db.refresh(application)
     return application
+
+
+def get_verification_requests(db: Session, user_id: str):
+    """
+    Get all verification applications for a given dietician (user_id)
+    """
+    return (
+        db.query(VerificationApplication)
+        .filter(
+            VerificationApplication.applicant_type == "dietician",
+            VerificationApplication.applicant_id == user_id
+        )
+        .all()
+    )

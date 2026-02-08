@@ -28,13 +28,20 @@ class ClientAssignment(Base):
     assignment_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     dietician_id = Column(String, ForeignKey("dieticians.dietician_id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    
+        
     status = Column(
-        Enum("active", "ended", "paused", name="client_assignment_statuses"),
+        Enum(
+            "pending",
+            "active",
+            "rejected",
+            "paused",
+            "ended",
+            name="client_assignment_statuses"
+        ),
         nullable=False,
-        server_default="active"
+        server_default="pending"
     )
-    
+
     assigned_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     ended_at = Column(TIMESTAMP, nullable=True)
     ended_reason = Column(String, nullable=True)
