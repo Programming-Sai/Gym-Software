@@ -42,16 +42,16 @@ class Subscription(Base):
     
     plan_name = Column(String, nullable=False)  # Keep for backward compatibility
     status = Column(
-        Enum("trialing", "active", "past_due", "cancelled", name="subscription_statuses"),
+        Enum("pending", "active", "past_due", "cancelled", name="subscription_statuses"),
         nullable=False,
-        server_default="trialing",
+        server_default="pending",
     )
 
     provider = Column(String, nullable=False, default="paystack")
     # REMOVED: provider_customer_id (now in users table)
 
-    current_period_start = Column(TIMESTAMP, nullable=False)
-    current_period_end = Column(TIMESTAMP, nullable=False)
+    current_period_start = Column(TIMESTAMP, nullable=True)
+    current_period_end = Column(TIMESTAMP, nullable=True)
     cancel_at_period_end = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)

@@ -1,7 +1,11 @@
 # core/security.py
+from fastapi import HTTPException
 from passlib.context import CryptContext
 import hashlib
 import secrets
+from urllib.parse import urlparse
+from app.core.config import settings
+
 
 
 
@@ -18,3 +22,18 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_refresh_token():
     return secrets.token_urlsafe(64)
+
+
+
+def validate_callback(url: str) -> None:
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    allowed = settings.ALLOWED_CALLBACK_DOMAINS
+
+    # allow all
+    if "*" in allowed:
+        return
+
+    if base not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid callback URL")
