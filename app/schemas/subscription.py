@@ -26,7 +26,7 @@ class SubscriptionTierUpdate(BaseModel):
     tier_type: Optional[Literal["user", "gym"]] = None
     price_monthly: Optional[Decimal] = None
     price_yearly: Optional[Decimal] = None
-    features: Optional[Dict[str, Any]] = None
+    features: Optional[List[str]] = None
     is_active: Optional[bool] = None
     display_order: Optional[int] = None
 

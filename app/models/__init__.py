@@ -11,7 +11,13 @@ from .gyms import Gym, GymPhoto, GymDocument
 from .dieticians import Dietician, DieticianDocument
 
 # Financial
-from .financials import SubscriptionTier, Subscription, Payment, Payout
+from .financials import (
+    SubscriptionTier,
+    Subscription,
+    Payment,
+    PaymentReconciliationEvent,
+    Payout,
+)
 
 # File management
 from .files import File
@@ -47,7 +53,7 @@ __all__ = [
     "Dietician", "DieticianDocument",
     
     # Financial
-    "SubscriptionTier", "Subscription", "Payment", "Payout",
+    "SubscriptionTier", "Subscription", "Payment", "PaymentReconciliationEvent", "Payout",
     
     # Files
     "File",

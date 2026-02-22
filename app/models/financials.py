@@ -1,8 +1,23 @@
-from sqlalchemy import DECIMAL, Column, String, ForeignKey, Enum, TIMESTAMP, Integer, Boolean, JSON, Index, Text
+from sqlalchemy import (
+    DECIMAL,
+    Column,
+    String,
+    ForeignKey,
+    Enum,
+    TIMESTAMP,
+    Integer,
+    Boolean,
+    JSON,
+    Index,
+    text,
+    Text,
+    UniqueConstraint,
+)
 from uuid import uuid4
 from sqlalchemy import func
 from app.core.database import Base
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import expression
 
 class SubscriptionTier(Base):
     """Definition of subscription tiers (for users and gyms)"""
@@ -16,10 +31,10 @@ class SubscriptionTier(Base):
     )
     price_monthly = Column(DECIMAL(12, 2), nullable=False)
     price_yearly = Column(DECIMAL(12, 2), nullable=True)
-    features = Column(JSON, default={})
+    features = Column(JSON, nullable=False, server_default=expression.text("'[]'::jsonb"))
     is_active = Column(Boolean, default=True)
     display_order = Column(Integer, default=0)
-    
+    duration_days = Column(Integer, nullable=False, default=30)
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
     
@@ -27,29 +42,21 @@ class SubscriptionTier(Base):
     users = relationship("User", foreign_keys="User.current_subscription_tier_id", back_populates="subscription_tier")
     
 
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
     subscription_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     user_id = Column(String, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     
-    # Reference to subscription tier definition
-    tier_id = Column(
-        String, 
-        ForeignKey("subscription_tiers.tier_id", ondelete="SET NULL"), 
-        nullable=True
-    )
-    
-    plan_name = Column(String, nullable=False)  # Keep for backward compatibility
+    tier_id = Column(String, ForeignKey("subscription_tiers.tier_id", ondelete="SET NULL"), nullable=True)
+    plan_name = Column(String, nullable=False)
     status = Column(
         Enum("pending", "active", "past_due", "cancelled", name="subscription_statuses"),
         nullable=False,
         server_default="pending",
     )
-
     provider = Column(String, nullable=False, default="paystack")
-    # REMOVED: provider_customer_id (now in users table)
-
     current_period_start = Column(TIMESTAMP, nullable=True)
     current_period_end = Column(TIMESTAMP, nullable=True)
     cancel_at_period_end = Column(Boolean, default=False, nullable=False)
@@ -58,14 +65,18 @@ class Subscription(Base):
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        Index("ix_subscriptions_user_status", "user_id", "status"),
+        Index(
+            "ix_subscriptions_user_status_unique",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('active','pending')")
+        ),
     )
-    
+
     # Relationships
     user = relationship("User")
     tier = relationship("SubscriptionTier", foreign_keys=[tier_id])
     payments = relationship("Payment", back_populates="subscription")
-
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -95,10 +106,15 @@ class Payment(Base):
     provider = Column(String, nullable=False, default="paystack")
     provider_payment_id = Column(String, nullable=True)
     receipt_url = Column(String, nullable=True)
-    payment_metadata  = Column(JSON, default={})
-
+    payment_metadata = Column(JSON, server_default=expression.text("'{}'::jsonb"))
+    
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    succeeded_at = Column(TIMESTAMP, nullable=True)
+    failed_at = Column(TIMESTAMP, nullable=True)
+    failure_code = Column(Text, nullable=True)
+    raw_provider_payload = Column(JSON, nullable=True)
 
     __table_args__ = (
         Index("ix_payments_user_subscription_status", "user_id", "subscription_id", "status"),
@@ -110,6 +126,36 @@ class Payment(Base):
     subscription = relationship("Subscription", back_populates="payments")
     gym = relationship("Gym")
     payout = relationship("Payout", uselist=False, back_populates="payment")
+
+
+class PaymentReconciliationEvent(Base):
+    """Audit queue for provider events that don't map to a local payment record."""
+    __tablename__ = "payment_reconciliation_events"
+
+    reconciliation_event_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    provider = Column(String, nullable=False, server_default="paystack")
+    provider_event = Column(String, nullable=False)
+    provider_event_id = Column(String, nullable=True)
+    reference = Column(String, nullable=False)
+    status = Column(
+        Enum("open", "resolved", "ignored", name="reconciliation_event_statuses"),
+        nullable=False,
+        server_default="open",
+    )
+    payload = Column(JSON, nullable=False, server_default=expression.text("'{}'::jsonb"))
+    notes = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_reconciliation_reference_status", "reference", "status"),
+        UniqueConstraint(
+            "provider",
+            "provider_event",
+            "reference",
+            name="uq_reconciliation_provider_event_reference",
+        ),
+    )
 
 
 class Payout(Base):

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: Literal["dev", "prod"] = "dev"
 
+    SUBSCRIPTION_PENDING_THRESHOLD_HOURS: int = 24
+
+
     @field_validator("ALLOWED_CALLBACK_DOMAINS", mode="before")
     @classmethod
     def parse_domains(cls, v):

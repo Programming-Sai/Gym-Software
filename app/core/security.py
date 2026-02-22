@@ -26,6 +26,7 @@ def create_refresh_token():
 
 
 def validate_callback(url: str) -> None:
+    if not url: return
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
 
