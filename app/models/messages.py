@@ -1,8 +1,9 @@
+
 from sqlalchemy import (
     Column,
     String,
     ForeignKey,
-    Boolean,
+    Enum,
     Text,
     TIMESTAMP,
     func,
@@ -11,6 +12,8 @@ from sqlalchemy import (
 from uuid import uuid4
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.models.enums import UserRole, user_role_enum
+
 
 class Message(Base):
     __tablename__ = "messages"
@@ -22,16 +25,18 @@ class Message(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
     )
+    sender_type = Column(user_role_enum, nullable=False)
 
     receiver_id = Column(
         String,
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
     )
+    receiver_type = Column(user_role_enum, nullable=False)
 
     content = Column(Text, nullable=False)
 
-    is_read = Column(Boolean, default=False, nullable=False)
+    file_id = Column(String, ForeignKey("files.file_id", ondelete="SET NULL"), nullable=True)
 
     created_at = Column(
         TIMESTAMP,
@@ -44,9 +49,10 @@ class Message(Base):
     # ⚡ ADD RELATIONSHIPS
     sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
     receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")
+    file = relationship("File")
 
     __table_args__ = (
         Index("ix_messages_sender", "sender_id"),
         Index("ix_messages_receiver", "receiver_id"),
-        Index("ix_messages_sender_receiver", "sender_id", "receiver_id"),
+        Index("ix_messages_conversation", "sender_id", "receiver_id"),
     )

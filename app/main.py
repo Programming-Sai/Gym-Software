@@ -7,8 +7,11 @@ from app.api.v1.announcements import router as announcement_router
 from app.api.v1.payments import router as payment_router
 from app.api.v1.dieticians import router as dietician_router
 from app.api.v1.subscription import router as subscription_router
+from app.api.v1.messaging import router as messaging_router
+from app.api.ws.chat import websocket_endpoint
 
-app = FastAPI(title="Gym Software API", version="1.0")
+
+app = FastAPI(title="Gym Software API", version="1.0", docs_url="/",)
 
 base = "/api/v1"
 
@@ -20,3 +23,5 @@ app.include_router(user_router, prefix=base+"/users")
 app.include_router(announcement_router, prefix=base+"/announcements")
 app.include_router(payment_router, prefix=base+"/payments")
 app.include_router(subscription_router, prefix=base+"/subscription-plans")
+app.include_router(messaging_router, prefix=base+"/messages")
+app.add_api_websocket_route("/ws/chat", websocket_endpoint)
