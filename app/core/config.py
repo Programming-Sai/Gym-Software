@@ -1,7 +1,8 @@
 import json
+from typing_extensions import Optional
 from pydantic import field_validator
 from pydantic_settings  import BaseSettings
-from typing import Literal
+from typing import Any, Dict, Literal
 
 
 class Settings(BaseSettings):
@@ -30,6 +31,19 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["dev", "prod"] = "dev"
 
     SUBSCRIPTION_PENDING_THRESHOLD_HOURS: int = 24
+
+    FIREBASE_CREDENTIALS: Optional[str] = None
+
+    @property
+    def firebase_credentials_dict(self) -> Optional[Dict[str, Any]]:
+        """Parse the raw JSON string into a dictionary"""
+        if not self.FIREBASE_CREDENTIALS:
+            return None
+        try:
+            return json.loads(self.FIREBASE_CREDENTIALS)
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse Firebase credentials JSON: {e}")
+            return None
 
 
     @field_validator("ALLOWED_CALLBACK_DOMAINS", mode="before")

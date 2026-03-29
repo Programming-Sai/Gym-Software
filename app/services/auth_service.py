@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session as DBSession
 from app.crud.otp import create_email_verification_otp, get_valid_otp, mark_otp_used
 from app.crud.user import mark_email_verified
+from app.models.notifications import DeviceToken
 from app.models.users import User
 from app.crud.user import get_user_by_email
 from app.core.security import verify_password, create_refresh_token
@@ -108,9 +109,16 @@ def refresh_access_token(db: DBSession, refresh_token: str):
 
 def logout(db: DBSession, refresh_token: str):
     session = db.query(Session).filter(
-        Session.refresh_token == refresh_token
+        Session.refresh_token == refresh_token,
+        Session.is_active == True
     ).first()
 
-    if session:
-        session.is_active = False
-        db.commit()
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    db.query(DeviceToken).filter(
+        DeviceToken.session_id == session.session_id
+    ).update({"is_active": False})
+
+    session.is_active = False
+    db.commit()

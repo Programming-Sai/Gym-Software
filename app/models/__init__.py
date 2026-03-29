@@ -23,7 +23,7 @@ from .financials import (
 from .files import File
 
 # Notifications & Communication
-from .notifications import Notification, NotificationRecipient
+from .notifications import Notification, NotificationRecipient, DeviceToken
 from .announcements import Announcement, AnnouncementRead
 from .messages import Message
 
@@ -59,7 +59,7 @@ __all__ = [
     "File",
     
     # Communication
-    "Notification", "NotificationRecipient",
+    "Notification", "NotificationRecipient", "DeviceToken",
     "Announcement", "AnnouncementRead",
     "Message",
     

@@ -30,7 +30,7 @@ def publish_announcement(
 
     # Permission checks
     if announcement.target_type == "platform":
-        if not user.role == "gym_owner":
+        if not user.role == "admin":
             raise HTTPException(status_code=403, detail="Admins only")
     else:
         gym = db.query(Gym).filter(Gym.gym_id == announcement.gym_id).first()

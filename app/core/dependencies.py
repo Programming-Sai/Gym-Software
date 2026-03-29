@@ -11,24 +11,39 @@ from app.models.gyms import Gym
 
 security = HTTPBearer()
 
-def get_current_user(
+def get_current_session(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     token = credentials.credentials
+
+    session = (
+        db.query(DBSession)
+        .filter(
+            DBSession.access_token == token,
+            DBSession.is_active == True,
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    return session
+
+def get_current_user(
+    db: Session = Depends(get_db),
+    session: DBSession = Depends(get_current_session),
+):
+    token = session.access_token
     try:
         payload = decode_token(token)
         user_id = payload.get("sub")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    session = db.query(DBSession).filter(
-        DBSession.access_token == token,
-        DBSession.is_active == True
-    ).first()
-
-    if not session:
-        raise HTTPException(status_code=401, detail="Session expired")
+    if not user_id or session.user_id != user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     user = db.query(User).filter(User.user_id == user_id).first()
 

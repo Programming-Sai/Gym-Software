@@ -23,6 +23,7 @@ class Session(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     expires_at = Column(TIMESTAMP, nullable=False)
 
+    device_tokens = relationship("DeviceToken", back_populates="session", cascade="all, delete-orphan")
     user = relationship("User", backref="sessions")
 
 

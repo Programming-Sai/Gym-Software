@@ -48,6 +48,8 @@ class User(Base):
         nullable=True
     )
 
+
+
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
     face_registered_at = Column(TIMESTAMP, nullable=True)
@@ -90,5 +92,6 @@ class User(Base):
         foreign_keys="Message.receiver_id",
         cascade="all, delete-orphan"
     )
+    device_tokens = relationship("DeviceToken", back_populates="user", cascade="all, delete-orphan")
     face_file = relationship("File", foreign_keys=[face_file_id])
 
