@@ -2,7 +2,21 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from app.crud.favorites import toggle_favorite_gym
-from app.schemas.gyms import GymCreate, GymDocumentType, GymListResponse, GymResponse, GymUpdate, GymPhotoResponse, GymDocumentResponse, GymStaffCreate, GymStaffRead, GymStaffListResponse, GymQRCodeOut
+from app.schemas.gyms import (
+    GymCreate,
+    GymDocumentType,
+    GymListResponse,
+    GymResponse,
+    GymUpdate,
+    GymPhotoResponse,
+    GymDocumentResponse,
+    GymStaffCreate,
+    GymStaffRead,
+    GymStaffListResponse,
+    GymQRCodeOut,
+    GymReceivePaymentsOut,
+    GymReceivePaymentsUpsert,
+)
 from app.core.dependencies import get_db, get_current_user, require_gym_owner
 from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_gym, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
 from app.crud.gym_media import add_or_replace_gym_photo, list_gym_photos, delete_gym_photo, add_or_replace_gym_document, list_gym_documents, delete_gym_document
@@ -10,6 +24,7 @@ from app.crud import gym_qr_code as crud
 from app.schemas.checkins import CheckinRequest, CheckinResponse
 
 from app.models.announcements import Announcement
+from app.models.financials import Payout
 from app.schemas.announcements import (
     AnnouncementCreate,
     AnnouncementResponse,
@@ -21,10 +36,12 @@ from app.crud.announcements import (
 )
 
 from app.services.checkin_service import perform_checkin
+from app.services.paystack_service import PaystackService
 
 
 
 router = APIRouter(tags=["Gyms"])
+paystack_service = PaystackService()
 
 
 @router.post("/", response_model=GymResponse)
@@ -449,5 +466,126 @@ def update_gym_announcement(
 
 
 
+# Receive payments endpoints
+def _ensure_no_processing_payouts(db: Session, gym_id: str) -> None:
+    processing = (
+        db.query(Payout.payout_id)
+        .filter(Payout.gym_id == gym_id, Payout.status == "processing")
+        .first()
+    )
+    if processing:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot modify receive-payments while a payout is processing",
+        )
+
+
+@router.get("/{gym_id}/receive-payments", response_model=GymReceivePaymentsOut)
+def get_receive_payments(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(require_gym_owner),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+    return gym
+
+
+@router.patch("/{gym_id}/receive-payments", response_model=GymReceivePaymentsOut)
+def upsert_receive_payments(
+    gym_id: str,
+    payload: GymReceivePaymentsUpsert,
+    db: Session = Depends(get_db),
+    _user=Depends(require_gym_owner),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    _ensure_no_processing_payouts(db, gym_id)
+
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    payout_method = data.get("payout_method", gym.payout_method)
+    if payout_method not in (None, "bank", "momo"):
+        raise HTTPException(status_code=400, detail="Invalid payout_method")
+
+    if payout_method == "bank":
+        required = ["payout_account_name", "payout_bank_code", "payout_account_number"]
+        missing = [k for k in required if not (data.get(k) or getattr(gym, k, None))]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing bank fields: {', '.join(missing)}")
+        gym.payout_momo_provider = None
+        gym.payout_momo_number = None
+
+    if payout_method == "momo":
+        required = ["payout_momo_provider", "payout_momo_number"]
+        missing = [k for k in required if not (data.get(k) or getattr(gym, k, None))]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing momo fields: {', '.join(missing)}")
+        gym.payout_account_name = None
+        gym.payout_bank_code = None
+        gym.payout_account_number = None
+
+    # Apply updates
+    for k, v in data.items():
+        setattr(gym, k, v)
+
+    # Any change to receive-payments details invalidates recipient verification
+    gym.paystack_recipient_code = None
+    gym.payouts_enabled = False
+    gym.payout_recipient_verified_at = None
+
+    db.add(gym)
+    db.commit()
+    db.refresh(gym)
+    return gym
+
+
+@router.post("/{gym_id}/receive-payments", response_model=GymReceivePaymentsOut)
+def create_receive_payments(
+    gym_id: str,
+    payload: GymReceivePaymentsUpsert,
+    db: Session = Depends(get_db),
+    _user=Depends(require_gym_owner),
+):
+    # POST is an alias for PATCH (first-time setup)
+    return upsert_receive_payments(gym_id, payload, db, _user)
+
+
+@router.delete("/{gym_id}/receive-payments", response_model=GymReceivePaymentsOut)
+def delete_receive_payments(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(require_gym_owner),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    _ensure_no_processing_payouts(db, gym_id)
+
+    # If we already created a recipient in Paystack, delete (deactivate) it there too
+    if gym.paystack_recipient_code:
+        paystack_service.delete_transfer_recipient(gym.paystack_recipient_code)
+
+    gym.payout_method = None
+    gym.payout_account_name = None
+    gym.payout_bank_code = None
+    gym.payout_account_number = None
+    gym.payout_momo_provider = None
+    gym.payout_momo_number = None
+
+    gym.paystack_recipient_code = None
+    gym.payouts_enabled = False
+    gym.payout_recipient_verified_at = None
+
+    db.add(gym)
+    db.commit()
+    db.refresh(gym)
+    return gym
 
 

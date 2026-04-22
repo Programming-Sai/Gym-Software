@@ -4,6 +4,8 @@ from typing import Optional, List, Dict
 from uuid import UUID
 from enum import Enum  
 from datetime import datetime
+from typing import Literal
+from pydantic import field_validator
 
 
 class GymBase(BaseModel):
@@ -156,4 +158,44 @@ class GymQRCodeOut(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class GymReceivePaymentsOut(BaseModel):
+    payout_method: str | None
+    payout_currency: str
+
+    paystack_recipient_code: str | None
+
+    payout_account_name: str | None
+    payout_bank_code: str | None
+    payout_account_number: str | None
+
+    payout_momo_provider: str | None
+    payout_momo_number: str | None
+
+    payouts_enabled: bool
+    payout_recipient_verified_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class GymReceivePaymentsUpsert(BaseModel):
+    payout_method: Literal["bank", "momo"] | None = None
+    payout_currency: str | None = None
+
+    payout_account_name: str | None = None
+    payout_bank_code: str | None = None
+    payout_account_number: str | None = None
+
+    payout_momo_provider: str | None = None
+    payout_momo_number: str | None = None
+
+    @field_validator("payout_currency")
+    @classmethod
+    def _normalize_currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().upper()
+        return v or None
+
 

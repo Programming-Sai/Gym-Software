@@ -77,6 +77,32 @@ class Gym(Base):
     workout_sessions = relationship("WorkoutSession", back_populates="gym", cascade="all, delete-orphan")
     gym_documents = relationship("GymDocument", back_populates="gym", cascade="all, delete-orphan")
 
+    # ---------------------------
+    # Payout recipient details
+    # ---------------------------
+    # "bank" | "momo" (kept as String to avoid enum migrations)
+    payout_method = Column(String(16), nullable=True)
+
+    # e.g. "GHS"
+    payout_currency = Column(String(8), nullable=False, server_default="GHS")
+
+    # Paystack transfer recipient code (once you create/verify recipient on Paystack)
+    paystack_recipient_code = Column(String(128), nullable=True, index=True)
+
+    # Bank payout (when payout_method == "bank")
+    payout_account_name = Column(String(128), nullable=True)
+    payout_bank_code = Column(String(32), nullable=True)
+    payout_account_number = Column(String(32), nullable=True)
+
+    # Mobile money payout (when payout_method == "momo")
+    payout_momo_provider = Column(String(32), nullable=True)
+    payout_momo_number = Column(String(32), nullable=True)
+
+    # Controls / audit
+    payouts_enabled = Column(Boolean, nullable=False, server_default="false")
+    payout_recipient_verified_at = Column(TIMESTAMP, nullable=True)
+
+
 
 
 

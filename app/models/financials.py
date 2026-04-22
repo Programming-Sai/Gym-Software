@@ -159,37 +159,50 @@ class PaymentReconciliationEvent(Base):
 
 
 class Payout(Base):
-    """Gym owner payouts"""
     __tablename__ = "payouts"
     
     payout_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
     gym_id = Column(String, ForeignKey("gyms.gym_id", ondelete="CASCADE"), nullable=False)
     
-    # Link to payment that triggered this payout
-    payment_id = Column(
-        String, 
-        ForeignKey("payments.payment_id", ondelete="SET NULL"), 
-        nullable=True
-    )
+    # Payment that generated this earnings (if from a specific subscription)
+    payment_id = Column(String, ForeignKey("payments.payment_id", ondelete="SET NULL"), nullable=True)
     
-    amount = Column(DECIMAL(12, 2), nullable=False)
+    amount = Column(DECIMAL(12, 2), nullable=False)  # Amount being paid to gym
+    fee = Column(DECIMAL(12, 2), default=0, nullable=False)  # Paystack transfer fee
+    net_amount = Column(DECIMAL(12, 2), nullable=False)  # amount - fee (what gym actually gets)
+    
     status = Column(
         Enum("pending", "processing", "completed", "failed", name="payout_statuses"),
         nullable=False,
         server_default="pending"
     )
     
-    scheduled_date = Column(TIMESTAMP, nullable=False)
-    processed_date = Column(TIMESTAMP, nullable=True)
+    # Who initiated/approved
+    initiated_by = Column(String, ForeignKey("users.user_id"), nullable=False)
+    approved_by = Column(String, ForeignKey("users.user_id"), nullable=True)
+    approved_at = Column(TIMESTAMP, nullable=True)
     
+    # Paystack tracking
     provider = Column(String, nullable=False, default="paystack")
-    provider_payout_id = Column(String, nullable=True)
+    recipient_code = Column(String, nullable=False)  # From gym's saved payout method
+    transfer_reference = Column(String, nullable=True)  # Paystack transfer_code
+    provider_transfer_id = Column(String, nullable=True)  # Paystack's internal ID
     
+    # Results
+    processed_date = Column(TIMESTAMP, nullable=True)
+    completed_date = Column(TIMESTAMP, nullable=True)
     failure_reason = Column(Text, nullable=True)
+    
+    # Metadata for audit
+    payout_metadata = Column(JSON, server_default=expression.text("'{}'::jsonb"))
     
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # Relationships
     gym = relationship("Gym", back_populates="payouts")
+    initiator = relationship("User", foreign_keys=[initiated_by])
+    approver = relationship("User", foreign_keys=[approved_by])
     payment = relationship("Payment", back_populates="payout")
+
+        
