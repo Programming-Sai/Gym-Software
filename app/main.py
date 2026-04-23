@@ -10,6 +10,7 @@ from app.api.v1.subscription import router as subscription_router
 from app.api.v1.messaging import router as messaging_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.admin_payouts import router as admin_payouts_router
+from app.api.v1.paystack_webhook import router as paystack_webhook_router
 from app.api.ws.chat import websocket_endpoint
 from fastapi.openapi.utils import get_openapi
 
@@ -151,4 +152,5 @@ app.include_router(subscription_router, prefix=base + "/subscription-plans")
 app.include_router(notifications_router, prefix=base + "/notifications")
 app.include_router(messaging_router, prefix=base + "/messages")
 app.include_router(admin_payouts_router, prefix=base + "/admin/payouts")
+app.include_router(paystack_webhook_router, prefix=base + "/paystack")
 app.add_api_websocket_route("/ws/chat", websocket_endpoint, name="websocket_messages")

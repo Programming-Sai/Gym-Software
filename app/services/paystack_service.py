@@ -160,8 +160,8 @@ class PaystackService:
             self._raise_for_paystack_error(response, "Failed to create Paystack transfer recipient")
 
         data = response.json()
+        
         if not data.get("status"):
-            print("\n\n\n\n\n",data, "\n\n\n\n")
             raise HTTPException(status_code=400, detail=data.get("message", "Transfer recipient creation failed"))
 
         return data["data"]
@@ -199,6 +199,34 @@ class PaystackService:
         return hmac.compare_digest(computed_hash, signature)
 
     # -------------------------------------------------
+    # VERIFY TRANSFER (PAYOUTS)
+    # -------------------------------------------------
+    def verify_transfer(self, reference: str) -> dict[str, Any]:
+        """
+        Verify a Paystack transfer by reference.
+
+        Note: This is different from transaction verification (payments).
+        """
+        response = requests.get(
+            f"{PAYSTACK_BASE_URL}/transfer/verify/{reference}",
+            headers=self.headers,
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            self._raise_for_paystack_error(response, "Failed to verify Paystack transfer")
+
+        data = response.json()
+
+        if not data.get("status"):
+            raise HTTPException(
+                status_code=400,
+                detail=data.get("message", "Transfer verification failed"),
+            )
+
+        return data["data"]
+
+    # -------------------------------------------------
     # CREATE TRANSFER (FOR GYM PAYOUTS)
     # -------------------------------------------------
     def create_transfer(self, amount: Decimal, recipient_code: str, reference: str):
@@ -217,11 +245,8 @@ class PaystackService:
             timeout=30,
         )
 
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to create Paystack transfer",
-            )
+        if response.status_code not in (200, 201):
+            self._raise_for_paystack_error(response, "Failed to create Paystack transfer")
 
         data = response.json()
 

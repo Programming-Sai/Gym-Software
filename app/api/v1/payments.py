@@ -470,21 +470,12 @@ def verify_payment(
 # -------------------------------------------------
 # WEBHOOK
 # -------------------------------------------------
-@router.post("/webhook")
-async def paystack_webhook(
-    request: Request,
-    x_paystack_signature: str = Header(...),
-    db: Session = Depends(get_db),
-):
-    raw_body = await request.body()
+def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
+    """
+    Shared handler for Paystack payment webhooks (used by the payments router webhook and the unified Paystack webhook).
 
-    if not paystack_service.verify_webhook_signature(
-        raw_body, x_paystack_signature
-    ):
-        raise HTTPException(status_code=400, detail="Invalid signature")
-
-    event = await request.json()
-
+    Expects `event` to already be parsed JSON, and signature verification to be handled by the caller.
+    """
     # Only process charge.success for now (idempotent)
     if event.get("event") == "charge.success":
         data = event.get("data", {})
@@ -634,10 +625,28 @@ async def paystack_webhook(
             # Return non-2xx so provider retries and we do not lose recoverable events.
             raise HTTPException(status_code=500, detail="Integrity error processing webhook")
 
-        except Exception as exc:
+        except Exception:
             db.rollback()
             logger.exception("Unhandled exception processing webhook for reference %s: %s", reference, traceback.format_exc())
             # Let the provider retry for transient errors
             raise HTTPException(status_code=500, detail="Internal error processing webhook")
+
     return {"status": "ok"}
+
+
+@router.post("/webhook")
+async def paystack_webhook(
+    request: Request,
+    x_paystack_signature: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    raw_body = await request.body()
+
+    if not paystack_service.verify_webhook_signature(
+        raw_body, x_paystack_signature
+    ):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    event = await request.json()
+    return handle_paystack_payment_webhook(event=event, db=db)
 
