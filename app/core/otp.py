@@ -1,4 +1,4 @@
-# app/core/otp_service.py
+# app/core/otp.py
 import random
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session

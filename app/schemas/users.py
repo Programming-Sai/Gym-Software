@@ -9,6 +9,7 @@ class UserRole(str, Enum):
     DIETICIAN = "dietician"
     GYM_OWNER = "gym_owner"
     ADMIN = "admin"
+    SUPERADMIN = "superadmin"
 
 class UserStatus(str, Enum):
     PENDING_VERIFICATION = "pending_verification"

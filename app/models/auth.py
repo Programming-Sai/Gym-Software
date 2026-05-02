@@ -79,3 +79,32 @@ class PasswordResetToken(Base):
     expires_at = Column(TIMESTAMP, nullable=False)
     used_at = Column(TIMESTAMP, nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+
+class AdminInvite(Base):
+    __tablename__ = "admin_invites"
+
+    invite_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+
+    email = Column(String, nullable=False, index=True)
+    role_to_grant = Column(String(32), nullable=False)  # "admin" | "superadmin"
+
+    token_hash = Column(String, unique=True, nullable=False, index=True)
+    expires_at = Column(TIMESTAMP, nullable=False)
+
+    created_by = Column(String, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+
+    accepted_by = Column(String, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+    accepted_at = Column(TIMESTAMP, nullable=True)
+
+    revoked_by = Column(String, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+    revoked_at = Column(TIMESTAMP, nullable=True)
+    revoke_reason = Column(String, nullable=True)
+
+    send_count = Column(Integer, nullable=False, server_default="0")
+    last_sent_at = Column(TIMESTAMP, nullable=True)
+
+    creator = relationship("User", foreign_keys=[created_by])
+    accepter = relationship("User", foreign_keys=[accepted_by])
+    revoker = relationship("User", foreign_keys=[revoked_by])

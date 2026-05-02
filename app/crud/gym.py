@@ -5,6 +5,24 @@ from app.schemas.gyms import GymCreate
 from typing import Optional, List, Tuple
 from app.models.users import User
 from app.models.relationships import GymStaff
+from app.models.verifications import VerificationApplication
+
+
+def _active_gym_owner_verified_filter(db: Session):
+    """
+    Business rule: a gym should only be publicly visible as 'active' if the gym owner is verified.
+    Verification is stored on the user level via VerificationApplication (applicant_type='gym_owner').
+    """
+    return (
+        db.query(VerificationApplication.application_id)
+        .filter(
+            VerificationApplication.applicant_type == "gym_owner",
+            VerificationApplication.applicant_id == Gym.owner_id,
+            VerificationApplication.status == "approved",
+        )
+        .correlate(Gym)
+        .exists()
+    )
 
 
 def create_gym(db: Session, owner_id: str, gym_data: GymCreate) -> Gym:
@@ -16,7 +34,25 @@ def create_gym(db: Session, owner_id: str, gym_data: GymCreate) -> Gym:
 
 
 def get_gym(db: Session, gym_id: str) -> Gym | None:
-    return db.query(Gym).filter(Gym.gym_id == gym_id).first()
+    gym = db.query(Gym).filter(Gym.gym_id == gym_id).first()
+    if not gym:
+        return None
+
+    # Public rule: don't expose "active" gyms whose owners are not verified.
+    if getattr(gym, "status", None) == "active":
+        is_verified = (
+            db.query(VerificationApplication.application_id)
+            .filter(
+                VerificationApplication.applicant_type == "gym_owner",
+                VerificationApplication.applicant_id == gym.owner_id,
+                VerificationApplication.status == "approved",
+            )
+            .first()
+        )
+        if not is_verified:
+            return None
+
+    return gym
 
 
 def update_gym(db: Session, gym_id: str, updates: dict) -> Gym | None:
@@ -58,6 +94,8 @@ def get_gyms(
     # Filter by status
     if status:
         query = query.filter(Gym.status == status)
+        if status == "active":
+            query = query.filter(_active_gym_owner_verified_filter(db))
 
     # Filter by subscription tier
     if subscription_tier:
@@ -104,6 +142,7 @@ def search_gyms(db: Session, q: str, skip: int = 0, limit: int = 10) -> Tuple[Li
 
     # Only active gyms by default
     query = query.filter(Gym.status == "active")
+    query = query.filter(_active_gym_owner_verified_filter(db))
 
     total = query.count()
     gyms = query.offset(skip).limit(limit).all()

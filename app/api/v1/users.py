@@ -21,7 +21,7 @@ from app.crud.announcements import mark_announcement_as_read
 router = APIRouter(tags=["Users"])
 
 
-@router.post("/users/face", response_model=RegisterFaceResponse)
+@router.post("/face", response_model=RegisterFaceResponse)
 def register_face(
     face: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -41,7 +41,7 @@ def register_face(
     )
 
 
-@router.get("/users/face", response_model=UserFaceStatusResponse)
+@router.get("/face", response_model=UserFaceStatusResponse)
 def get_face_status(user=Depends(get_current_user)):
     return get_user_face_status(user)
 
@@ -51,10 +51,7 @@ def list_user_checkins(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    if (
-        user.user_id != user_id
-        and user.role not in ("admin", "gym_owner")
-    ):
+    if user.user_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     return get_user_checkins(db, user_id, viewer=user)
@@ -68,7 +65,7 @@ def list_user_favorites(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    if user.user_id != user_id and user.role != "admin":
+    if user.user_id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     return get_user_favorites(db, user_id)

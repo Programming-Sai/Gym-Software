@@ -14,6 +14,7 @@ from app.services.paystack_service import PaystackService
 from app.models import Subscription, SubscriptionTier, Payment, PaymentReconciliationEvent
 from app.core.dependencies import get_current_user
 from app.core.security import validate_callback
+from app.services.audit_log_service import write_audit_log
 
 router = APIRouter(tags=["Payments"])
 paystack_service = PaystackService()
@@ -40,6 +41,7 @@ def _get_user_active_or_pending(db: Session, user_id: str):
 # -------------------------------------------------
 @router.post("/initialize")
 def initialize_subscription_payment(
+    request: Request,
     tier_id: str,
     callback_url: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -115,6 +117,28 @@ def initialize_subscription_payment(
                     }
                     pending_payment.payment_metadata = pm
                     db.add(pending_payment)
+                    write_audit_log(
+                        db,
+                        category="money",
+                        action="payment.initialized",
+                        entity_type="payment",
+                        entity_id=pending_payment.payment_id,
+                        actor=current_user,
+                        request=request,
+                        success=True,
+                        amount=Decimal(pending_payment.amount),
+                        currency=pm.get("currency", "GHS"),
+                        provider=pending_payment.provider,
+                        provider_reference=pending_payment.payment_id,
+                        payer_user_id=current_user.user_id,
+                        metadata={
+                            "source": "initialize",
+                            "status": "pending_reinit",
+                            "subscription_id": existing.subscription_id,
+                            "tier_id": str(existing.tier_id) if existing.tier_id else None,
+                            "payee": "platform",
+                        },
+                    )
                     db.commit()
                     return {
                         "status": "pending",
@@ -198,6 +222,31 @@ def initialize_subscription_payment(
             except Exception:
                 logger.exception("Failed to persist init metadata for payment %s", reference)
 
+            # Audit: record initialization for investigation (not a success charge yet)
+            write_audit_log(
+                db,
+                category="money",
+                action="payment.initialized",
+                entity_type="payment",
+                entity_id=reference,
+                actor=current_user,
+                request=request,
+                success=True,
+                amount=Decimal(tier.price_monthly),
+                currency="GHS",
+                provider="paystack",
+                provider_reference=reference,
+                payer_user_id=current_user.user_id,
+                metadata={
+                    "source": "initialize",
+                    "status": "initialized",
+                    "tier_id": tier_id,
+                    "subscription_id": subscription.subscription_id,
+                    "payee": "platform",
+                },
+            )
+            db.commit()
+
             return {
                 "authorization_url": paystack_data["authorization_url"],
                 "reference": reference,
@@ -266,6 +315,7 @@ def initialize_subscription_payment(
 @router.post("/verify/{reference}")
 def verify_payment(
     reference: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -343,6 +393,29 @@ def verify_payment(
 
             payment.payment_metadata = pm
             db.add(payment)
+            if payment.status == "failed":
+                write_audit_log(
+                    db,
+                    category="money",
+                    action="payment.failed",
+                    entity_type="payment",
+                    entity_id=payment.payment_id,
+                    actor=current_user,
+                    request=request,
+                    success=False,
+                    error_message=f"provider_status={provider_status}",
+                    amount=Decimal(payment.amount),
+                    currency=(provider_currency or pm.get("currency") or "GHS"),
+                    provider=payment.provider,
+                    provider_reference=payment.provider_payment_id or reference,
+                    payer_user_id=current_user.user_id,
+                    metadata={
+                        "source": "verify",
+                        "failure_code": payment.failure_code,
+                        "subscription_id": payment.subscription_id,
+                        "payee": "platform",
+                    },
+                )
 
             # Persist failure/warning state before returning
             try:
@@ -367,6 +440,30 @@ def verify_payment(
             })
             payment.payment_metadata = pm
             db.add(payment)
+            write_audit_log(
+                db,
+                category="money",
+                action="payment.failed",
+                entity_type="payment",
+                entity_id=payment.payment_id,
+                actor=current_user,
+                request=request,
+                success=False,
+                error_message="amount_currency_mismatch",
+                amount=Decimal(payment.amount),
+                currency=(provider_currency or "GHS"),
+                provider=payment.provider,
+                provider_reference=payment.provider_payment_id or reference,
+                payer_user_id=current_user.user_id,
+                metadata={
+                    "source": "verify",
+                    "provider_amount": provider_amount,
+                    "provider_currency": provider_currency,
+                    "expected_amount": expected_local_amount,
+                    "subscription_id": payment.subscription_id,
+                    "payee": "platform",
+                },
+            )
             try:
                 db.commit()
             except IntegrityError:
@@ -440,6 +537,26 @@ def verify_payment(
         db.add(payment)
         db.add(subscription)
         db.add(user)
+        write_audit_log(
+            db,
+            category="money",
+            action="payment.succeeded",
+            entity_type="payment",
+            entity_id=payment.payment_id,
+            actor=current_user,
+            request=request,
+            success=True,
+            amount=Decimal(payment.amount),
+            currency=provider_currency or "GHS",
+            provider=payment.provider,
+            provider_reference=payment.provider_payment_id or reference,
+            payer_user_id=current_user.user_id,
+            metadata={
+                "source": "verify",
+                "subscription_id": payment.subscription_id,
+                "payee": "platform",
+            },
+        )
 
         # Persist success atomically
         try:
@@ -470,14 +587,79 @@ def verify_payment(
 # -------------------------------------------------
 # WEBHOOK
 # -------------------------------------------------
-def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
+def handle_paystack_payment_webhook(*, event: dict, db: Session, request: Request | None = None) -> dict:
     """
     Shared handler for Paystack payment webhooks (used by the payments router webhook and the unified Paystack webhook).
 
     Expects `event` to already be parsed JSON, and signature verification to be handled by the caller.
     """
+    event_name = str(event.get("event") or "")
+
+    # Refund events: record for manual reconciliation (no automated refunds flow yet).
+    if event_name.startswith("refund."):
+        data = event.get("data", {}) or {}
+        # Prefer original transaction reference (Paystack refund fetch uses it).
+        reference = str(data.get("transaction_reference") or data.get("reference") or "").strip()
+        if not reference:
+            reference = str(data.get("id") or "unknown")
+
+        now_iso = datetime.utcnow().isoformat()
+        try:
+            with db.begin():
+                existing = db.query(PaymentReconciliationEvent).filter(
+                    PaymentReconciliationEvent.provider == "paystack",
+                    PaymentReconciliationEvent.provider_event == event_name,
+                    PaymentReconciliationEvent.reference == reference,
+                ).with_for_update(nowait=False).first()
+
+                if existing:
+                    payload = existing.payload or {}
+                    payload["seen_count"] = int(payload.get("seen_count", 1)) + 1
+                    payload["last_seen_at"] = now_iso
+                    payload["last_event"] = event
+                    existing.payload = payload
+                    db.add(existing)
+                    reconciliation_event_id = existing.reconciliation_event_id
+                else:
+                    recon = PaymentReconciliationEvent(
+                        provider="paystack",
+                        provider_event=event_name,
+                        provider_event_id=str(data.get("id")) if data.get("id") is not None else None,
+                        reference=reference,
+                        status="open",
+                        payload={
+                            "seen_count": 1,
+                            "first_seen_at": now_iso,
+                            "last_seen_at": now_iso,
+                            "last_event": event,
+                        },
+                        notes="Refund webhook recorded for manual reconciliation",
+                    )
+                    db.add(recon)
+                    db.flush()
+                    reconciliation_event_id = recon.reconciliation_event_id
+
+                write_audit_log(
+                    db,
+                    category="money",
+                    action="refund.webhook_recorded",
+                    entity_type="payment_reconciliation_event",
+                    entity_id=reconciliation_event_id,
+                    actor=None,
+                    request=request,
+                    success=True,
+                    provider="paystack",
+                    provider_reference=reference,
+                    metadata={"event": event_name},
+                )
+
+        except Exception:
+            logger.exception("Failed to record refund webhook reconciliation event")
+
+        return {"status": "ok", "note": "refund_reconciliation_recorded"}
+
     # Only process charge.success for now (idempotent)
-    if event.get("event") == "charge.success":
+    if event_name == "charge.success":
         data = event.get("data", {})
         reference = data.get("reference")
         if not reference:
@@ -492,7 +674,7 @@ def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
                 # If local payment row does not exist, persist a reconciliation event for follow-up.
                 if not payment:
                     now_iso = datetime.utcnow().isoformat()
-                    provider_event = event.get("event") or "unknown"
+                    provider_event = event_name or "unknown"
                     provider_event_id = str(data.get("id")) if data.get("id") is not None else None
 
                     existing_recon = db.query(PaymentReconciliationEvent).filter(
@@ -564,6 +746,30 @@ def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
                     })
                     payment.payment_metadata = pm
                     db.add(payment)
+                    write_audit_log(
+                        db,
+                        category="money",
+                        action="payment.failed",
+                        entity_type="payment",
+                        entity_id=payment.payment_id,
+                        actor=None,
+                        request=request,
+                        success=False,
+                        error_message="amount_currency_mismatch",
+                        amount=Decimal(payment.amount),
+                        currency=(provider_currency or "GHS"),
+                        provider=payment.provider,
+                        provider_reference=payment.provider_payment_id or reference,
+                        payer_user_id=payment.user_id,
+                        metadata={
+                            "source": "webhook",
+                            "event": "charge.success",
+                            "provider_amount": provider_amount,
+                            "expected_amount": int(Decimal(payment.amount) * 100),
+                            "subscription_id": payment.subscription_id,
+                            "payee": "platform",
+                        },
+                    )
                     logger.error("Webhook mismatch for %s: provider_amount=%s expected=%s",
                                  reference, provider_amount, int(Decimal(payment.amount) * 100))
                     return {"status": "ok", "note": "mismatch"}
@@ -581,6 +787,28 @@ def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
                     })
                     payment.payment_metadata = pm
                     db.add(payment)
+                    write_audit_log(
+                        db,
+                        category="money",
+                        action="payment.failed",
+                        entity_type="payment",
+                        entity_id=payment.payment_id,
+                        actor=None,
+                        request=request,
+                        success=False,
+                        error_message="metadata_mismatch",
+                        amount=Decimal(payment.amount),
+                        currency=(provider_currency or "GHS"),
+                        provider=payment.provider,
+                        provider_reference=payment.provider_payment_id or reference,
+                        payer_user_id=payment.user_id,
+                        metadata={
+                            "source": "webhook",
+                            "event": "charge.success",
+                            "subscription_id": payment.subscription_id,
+                            "payee": "platform",
+                        },
+                    )
                     logger.error("Webhook metadata mismatch for %s: metadata=%s", reference, metadata)
                     return {"status": "ok", "note": "metadata_mismatch"}
 
@@ -591,6 +819,27 @@ def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
                     payment.failed_at = datetime.utcnow()
                     payment.failure_code = "missing_subscription"
                     db.add(payment)
+                    write_audit_log(
+                        db,
+                        category="money",
+                        action="payment.failed",
+                        entity_type="payment",
+                        entity_id=payment.payment_id,
+                        actor=None,
+                        request=request,
+                        success=False,
+                        error_message="missing_subscription",
+                        amount=Decimal(payment.amount),
+                        currency=(provider_currency or "GHS"),
+                        provider=payment.provider,
+                        provider_reference=payment.provider_payment_id or reference,
+                        payer_user_id=payment.user_id,
+                        metadata={
+                            "source": "webhook",
+                            "event": "charge.success",
+                            "payee": "platform",
+                        },
+                    )
                     logger.error("Webhook: subscription missing for payment %s", reference)
                     return {"status": "ok", "note": "missing subscription"}
 
@@ -618,6 +867,27 @@ def handle_paystack_payment_webhook(*, event: dict, db: Session) -> dict:
                 db.add(payment)
                 db.add(subscription)
                 db.add(user)
+                write_audit_log(
+                    db,
+                    category="money",
+                    action="payment.succeeded",
+                    entity_type="payment",
+                    entity_id=payment.payment_id,
+                    actor=None,
+                    request=request,
+                    success=True,
+                    amount=Decimal(payment.amount),
+                    currency=(provider_currency or "GHS"),
+                    provider=payment.provider,
+                    provider_reference=payment.provider_payment_id or reference,
+                    payer_user_id=payment.user_id,
+                    metadata={
+                        "source": "webhook",
+                        "subscription_id": payment.subscription_id,
+                        "payee": "platform",
+                        "event": "charge.success",
+                    },
+                )
 
         except IntegrityError:
             db.rollback()
@@ -648,5 +918,5 @@ async def paystack_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event = await request.json()
-    return handle_paystack_payment_webhook(event=event, db=db)
+    return handle_paystack_payment_webhook(event=event, db=db, request=request)
 

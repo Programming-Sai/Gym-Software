@@ -1,25 +1,24 @@
+import logging
+
 from fastapi import APIRouter
-from sqlalchemy import create_engine
+from sqlalchemy import text
 from pydantic import BaseModel
-from dotenv import load_dotenv
 import firebase_admin
 
-from app.core.database import DATABASE_URL
+from app.core.database import engine
 from app.services.fcm_service import fcm_service
 
-load_dotenv()
-
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def test_db_connection():
     try:
-        engine = create_engine(DATABASE_URL)
-        conn = engine.connect()
-        conn.close()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
         return True
-    except Exception as e:
-        print(f"DB connection error: {e}")
+    except Exception:
+        logger.exception("DB connection error")
         return False
 
 

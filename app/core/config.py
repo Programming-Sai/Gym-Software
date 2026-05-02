@@ -1,8 +1,11 @@
 import json
+import logging
 from typing_extensions import Optional
 from pydantic import field_validator
 from pydantic_settings  import BaseSettings
 from typing import Any, Dict, Literal
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -42,7 +45,7 @@ class Settings(BaseSettings):
         try:
             return json.loads(self.FIREBASE_CREDENTIALS)
         except json.JSONDecodeError as e:
-            print(f"Failed to parse Firebase credentials JSON: {e}")
+            logger.warning("Failed to parse FIREBASE_CREDENTIALS JSON", exc_info=True)
             return None
 
 

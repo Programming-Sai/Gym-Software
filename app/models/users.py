@@ -20,7 +20,7 @@ class User(Base):
     )
 
     role = Column(
-        Enum("gym_user", "dietician", "gym_owner", "admin", name="user_roles"),
+        Enum("gym_user", "dietician", "gym_owner", "admin", "superadmin", name="user_roles"),
         nullable=False,
         server_default="gym_user"
     )

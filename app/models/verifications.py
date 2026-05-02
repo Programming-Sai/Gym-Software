@@ -18,7 +18,7 @@ class VerificationApplication(Base):
     applicant_id = Column(String, nullable=False)  # user_id (for gym_owner or dietician)
     
     status = Column(
-        Enum("pending", "approved", "rejected", "more_info_required", name="verification_statuses"),
+        Enum("pending", "approved", "rejected", "more_info_required", "withdrawn", name="verification_statuses"),
         nullable=False,
         server_default="pending"
     )
@@ -38,12 +38,22 @@ class VerificationApplication(Base):
     info_request = Column(Text, nullable=True)
     info_requested_at = Column(TIMESTAMP, nullable=True)
     info_provided_at = Column(TIMESTAMP, nullable=True)
+
+    # For "withdrawn" status (user-initiated withdrawal)
+    withdrawn_at = Column(TIMESTAMP, nullable=True)
+    withdrawn_reason = Column(Text, nullable=True)
+    withdrawn_by = Column(
+        String,
+        ForeignKey("users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     
     created_at = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # Relationships
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+    withdrawer = relationship("User", foreign_keys=[withdrawn_by])
     applicant_user = relationship("User", 
                                  foreign_keys=[applicant_id],
                                  primaryjoin="VerificationApplication.applicant_id==User.user_id")

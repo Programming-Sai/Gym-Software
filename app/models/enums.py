@@ -7,6 +7,7 @@ class UserRole(str, enum.Enum):
     GYM_OWNER = "gym_owner"
     DIETICIAN = "dietician"
     ADMIN = "admin"
+    SUPERADMIN = "superadmin"
 
     def __str__(self):
         return self.value

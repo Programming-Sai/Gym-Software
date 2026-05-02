@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from app.crud.favorites import toggle_favorite_gym
 from app.schemas.gyms import (
@@ -16,12 +17,16 @@ from app.schemas.gyms import (
     GymQRCodeOut,
     GymReceivePaymentsOut,
     GymReceivePaymentsUpsert,
+    GymOwnerVerificationStatusSchema,
 )
+from app.schemas.verifications import VerificationWithdrawRequest
 from app.core.dependencies import get_db, get_current_user, require_gym_owner
-from app.crud.gym import create_gym, get_gym, get_gym_by_id, update_gym, delete_gym, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
+from app.crud.gym import create_gym, get_gym, get_gym_by_id, get_gyms, search_gyms, list_gym_staff, add_staff_to_gym, remove_staff_from_gym
 from app.crud.gym_media import add_or_replace_gym_photo, list_gym_photos, delete_gym_photo, add_or_replace_gym_document, list_gym_documents, delete_gym_document
 from app.crud import gym_qr_code as crud
-from app.schemas.checkins import CheckinRequest, CheckinResponse
+from app.crud import gym_owner as crud_gym_owner
+from app.schemas.checkins import CheckinListResponse, CheckinRequest, CheckinResponse
+from app.crud.checkins import get_gym_checkins
 
 from app.models.announcements import Announcement
 from app.models.financials import Payout
@@ -37,6 +42,8 @@ from app.crud.announcements import (
 
 from app.services.checkin_service import perform_checkin
 from app.services.paystack_service import PaystackService
+from app.services.audit_log_service import write_audit_log
+from app.models.verifications import VerificationApplication
 
 
 
@@ -47,6 +54,7 @@ paystack_service = PaystackService()
 @router.post("/", response_model=GymResponse)
 def create_gym_endpoint(
     gym_data: GymCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),
 ):
@@ -54,23 +62,215 @@ def create_gym_endpoint(
     if current_user.role != "gym_owner":
         raise HTTPException(status_code=403, detail="Only gym owners can create gyms")
     
-    return create_gym(db=db, owner_id=current_user.user_id, gym_data=gym_data)
+    gym = create_gym(db=db, owner_id=current_user.user_id, gym_data=gym_data)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym.created",
+        entity_type="gym",
+        entity_id=gym.gym_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={"owner_id": current_user.user_id},
+    )
+    db.commit()
+    return gym
+
+
+@router.post("/request-verification")
+async def request_gym_owner_verification(
+    request: Request,
+    document_types: str = Form(...),
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role != "gym_owner":
+        raise HTTPException(status_code=403, detail="You are not a gym owner")
+
+    doc_types = [dt.strip() for dt in document_types.split(",") if dt.strip()]
+    if len(files) != len(doc_types):
+        raise HTTPException(status_code=400, detail="Each file must have a document type")
+
+    uploaded_files = [
+        {"file": f.file, "filename": f.filename, "document_type": dt}
+        for f, dt in zip(files, doc_types)
+    ]
+
+    try:
+        application = crud_gym_owner.create_verification_request(
+            db=db,
+            user_id=current_user.user_id,
+            uploaded_files=uploaded_files,
+            uploader_id=current_user.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym_owner.verification.requested",
+        entity_type="verification_application",
+        entity_id=application.application_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={
+            "applicant_type": "gym_owner",
+            "applicant_id": current_user.user_id,
+            "document_types": doc_types,
+            "file_count": len(files),
+        },
+    )
+    db.commit()
+
+    return {
+        "application_id": application.application_id,
+        "status": application.status,
+        "submitted_at": application.submitted_at,
+    }
+
+
+@router.get("/me/verification", response_model=List[GymOwnerVerificationStatusSchema])
+def get_my_gym_owner_verification_status(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role != "gym_owner":
+        raise HTTPException(status_code=403, detail="Only gym owners can access this")
+
+    return crud_gym_owner.get_verification_requests(db, user_id=current_user.user_id)
+
+
+@router.post("/me/verification/{application_id}/withdraw")
+def withdraw_my_gym_owner_verification_request(
+    application_id: str,
+    payload: VerificationWithdrawRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role != "gym_owner":
+        raise HTTPException(status_code=403, detail="Only gym owners can access this")
+
+    application = (
+        db.query(VerificationApplication)
+        .filter(
+            VerificationApplication.application_id == application_id,
+            VerificationApplication.applicant_type == "gym_owner",
+            VerificationApplication.applicant_id == current_user.user_id,
+        )
+        .first()
+    )
+    if not application:
+        raise HTTPException(status_code=404, detail="Verification application not found")
+
+    if application.status in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail=f"Cannot withdraw an application in status={application.status}")
+    if application.status == "withdrawn":
+        raise HTTPException(status_code=400, detail="Application already withdrawn")
+    if application.status not in {"pending", "more_info_required"}:
+        raise HTTPException(status_code=400, detail=f"Cannot withdraw an application in status={application.status}")
+
+    application.status = "withdrawn"
+    application.withdrawn_reason = payload.reason.strip()
+    application.withdrawn_at = datetime.utcnow()
+    application.withdrawn_by = current_user.user_id
+
+    db.add(application)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym_owner.verification.withdrawn",
+        entity_type="verification_application",
+        entity_id=application.application_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={
+            "applicant_type": "gym_owner",
+            "applicant_id": current_user.user_id,
+            "withdraw_reason": payload.reason,
+        },
+    )
+    db.commit()
+    db.refresh(application)
+
+    return {
+        "application_id": application.application_id,
+        "status": application.status,
+        "withdrawn_at": application.withdrawn_at,
+        "withdrawn_reason": application.withdrawn_reason,
+    }
 
 
 
 
 @router.patch("/{gym_id}")
-def patch_gym(gym_id: str, data: GymUpdate, db: Session = Depends(get_db)):
-    updated_gym = update_gym(db, gym_id, data.dict(exclude_unset=True))
-    if not updated_gym:
-        raise HTTPException(status_code=404, detail="Gym not found")
-    return updated_gym
-
-@router.delete("/{gym_id}")
-def remove_gym(gym_id: str, db: Session = Depends(get_db)):
-    gym = delete_gym(db, gym_id)
+def patch_gym(
+    gym_id: str,
+    data: GymUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    gym = get_gym_by_id(db, gym_id)
     if not gym:
         raise HTTPException(status_code=404, detail="Gym not found")
+
+    if current_user.role not in {"admin", "superadmin"}:
+        if current_user.role != "gym_owner" or gym.owner_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this gym")
+
+    updates = data.dict(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(gym, key, value)
+    db.add(gym)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym.updated",
+        entity_type="gym",
+        entity_id=gym_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={"changed_fields": list(updates.keys())},
+    )
+    db.commit()
+    db.refresh(gym)
+    return gym
+
+@router.delete("/{gym_id}")
+def remove_gym(
+    gym_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    # Hard delete is destructive: superadmin-only.
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    db.delete(gym)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym.deleted",
+        entity_type="gym",
+        entity_id=gym_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={},
+    )
+    db.commit()
     return {"message": "Gym deleted successfully"}
 
 
@@ -361,6 +561,19 @@ def gym_checkin(
     )
 
 
+@router.get("/{gym_id}/checkins", response_model=List[CheckinListResponse])
+def list_gym_checkins(
+    gym_id: str,
+    db: Session = Depends(get_db),
+    _owner=Depends(require_gym_owner),
+):
+    gym = get_gym_by_id(db, gym_id)
+    if not gym:
+        raise HTTPException(status_code=404, detail="Gym not found")
+
+    return get_gym_checkins(db, gym_id)
+
+
 @router.post("/{gym_id}/favorite")
 def favorite_gym(
     gym_id: str,
@@ -379,7 +592,7 @@ def create_gym_announcement(
     gym_id: str,
     payload: AnnouncementCreate,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(require_gym_owner),
 ):
     announcement = Announcement(
         created_by=user.user_id,
@@ -441,7 +654,7 @@ def update_gym_announcement(
     announcement_id: str,
     payload: AnnouncementUpdateRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(require_gym_owner),
 ):
     announcement = db.query(Announcement).filter(
         Announcement.announcement_id == announcement_id,
@@ -454,7 +667,7 @@ def update_gym_announcement(
     if announcement.status != "draft":
         raise HTTPException(status_code=400, detail="Only drafts can be updated")
 
-    if not (user.role in {"gym_owner", "admin"} or user.user_id == announcement.created_by):
+    if user.user_id != announcement.created_by:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     for field, value in payload.dict(exclude_unset=True).items():
@@ -463,6 +676,65 @@ def update_gym_announcement(
     db.commit()
     db.refresh(announcement)
     return announcement
+
+
+@router.post("/{gym_id}/announcements/{announcement_id}/publish", response_model=AnnouncementResponse)
+def publish_gym_announcement(
+    gym_id: str,
+    announcement_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_gym_owner),
+):
+    announcement = (
+        db.query(Announcement)
+        .filter(
+            Announcement.announcement_id == announcement_id,
+            Announcement.gym_id == gym_id,
+            Announcement.target_type == "gym",
+        )
+        .with_for_update(nowait=False)
+        .first()
+    )
+
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    if announcement.created_by != user.user_id:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    if announcement.status != "draft":
+        raise HTTPException(status_code=400, detail="Only draft announcements can be published")
+
+    announcement.status = "published"
+    if not announcement.publish_at:
+        announcement.publish_at = datetime.utcnow()
+
+    db.add(announcement)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym_announcement.published",
+        entity_type="announcement",
+        entity_id=announcement.announcement_id,
+        actor=user,
+        request=request,
+        success=True,
+        payee_gym_id=gym_id,
+        metadata={"audience": announcement.audience, "is_important": bool(announcement.is_important)},
+    )
+    db.commit()
+    db.refresh(announcement)
+
+    return AnnouncementResponse(
+        announcement_id=announcement.announcement_id,
+        title=announcement.title,
+        content=announcement.content,
+        audience=announcement.audience,
+        is_important=announcement.is_important,
+        created_at=announcement.created_at,
+        is_read=False,
+    )
 
 
 
@@ -496,6 +768,7 @@ def get_receive_payments(
 def upsert_receive_payments(
     gym_id: str,
     payload: GymReceivePaymentsUpsert,
+    request: Request,
     db: Session = Depends(get_db),
     _user=Depends(require_gym_owner),
 ):
@@ -540,6 +813,22 @@ def upsert_receive_payments(
     gym.payout_recipient_verified_at = None
 
     db.add(gym)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym.receive_payments.updated",
+        entity_type="gym",
+        entity_id=gym.gym_id,
+        actor=_user,
+        request=request,
+        success=True,
+        metadata={
+            "changed_fields": list(data.keys()),
+            "payout_method": getattr(gym, "payout_method", None),
+            "payout_currency": getattr(gym, "payout_currency", None),
+            "verification_invalidated": True,
+        },
+    )
     db.commit()
     db.refresh(gym)
     return gym
@@ -549,16 +838,18 @@ def upsert_receive_payments(
 def create_receive_payments(
     gym_id: str,
     payload: GymReceivePaymentsUpsert,
+    request: Request,
     db: Session = Depends(get_db),
     _user=Depends(require_gym_owner),
 ):
     # POST is an alias for PATCH (first-time setup)
-    return upsert_receive_payments(gym_id, payload, db, _user)
+    return upsert_receive_payments(gym_id, payload, request, db, _user)
 
 
 @router.delete("/{gym_id}/receive-payments", response_model=GymReceivePaymentsOut)
 def delete_receive_payments(
     gym_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     _user=Depends(require_gym_owner),
 ):
@@ -569,8 +860,10 @@ def delete_receive_payments(
     _ensure_no_processing_payouts(db, gym_id)
 
     # If we already created a recipient in Paystack, delete (deactivate) it there too
+    deleted_on_provider = False
     if gym.paystack_recipient_code:
         paystack_service.delete_transfer_recipient(gym.paystack_recipient_code)
+        deleted_on_provider = True
 
     gym.payout_method = None
     gym.payout_account_name = None
@@ -584,6 +877,20 @@ def delete_receive_payments(
     gym.payout_recipient_verified_at = None
 
     db.add(gym)
+    write_audit_log(
+        db,
+        category="crud",
+        action="gym.receive_payments.deleted",
+        entity_type="gym",
+        entity_id=gym.gym_id,
+        actor=_user,
+        request=request,
+        success=True,
+        metadata={
+            "verification_invalidated": True,
+            "recipient_deleted_on_provider": deleted_on_provider,
+        },
+    )
     db.commit()
     db.refresh(gym)
     return gym

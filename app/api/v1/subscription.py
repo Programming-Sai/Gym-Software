@@ -21,7 +21,7 @@ router = APIRouter(tags=["Subscription Plans"])
 # -------- ADMIN GUARD --------
 
 def admin_required(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
+    if current_user.role not in {"admin", "superadmin"}:
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
 

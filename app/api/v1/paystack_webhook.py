@@ -35,11 +35,9 @@ async def paystack_webhook(
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event = await request.json()
-    print("\n\n\n\n\n",event, "\n\n\n\n")
     event_name = str(event.get("event") or "")
 
     if event_name.startswith("transfer."):
-        return handle_paystack_transfer_webhook(event=event, db=db)
+        return handle_paystack_transfer_webhook(event=event, db=db, request=request)
 
-    return handle_paystack_payment_webhook(event=event, db=db)
-
+    return handle_paystack_payment_webhook(event=event, db=db, request=request)

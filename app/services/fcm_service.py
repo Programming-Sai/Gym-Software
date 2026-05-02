@@ -95,7 +95,9 @@ class FCMService:
         scope: str = "individual",
         data: dict = None,
         image_url: str = None,
-        send_push: bool = True
+        send_push: bool = True,
+        sent_by_user_id: str | None = None,
+        sent_by_role: str | None = None,
     ) -> List[str]:
         """
         Send notification to multiple users.
@@ -126,7 +128,9 @@ class FCMService:
             title=title,
             message=body,
             image_url=image_url,
-            sent_at=func.now()
+            sent_at=func.now(),
+            sent_by_user_id=sent_by_user_id,
+            sent_by_role=sent_by_role,
         )
         db.add(notification)
         db.flush()
@@ -178,7 +182,9 @@ class FCMService:
         notification_type: str = "info",
         data: dict = None,
         image_url: str = None,
-        send_push: bool = True
+        send_push: bool = True,
+        sent_by_user_id: str | None = None,
+        sent_by_role: str | None = None,
     ) -> Optional[str]:
         """Send notification to a single user"""
         notification_ids = self.send(
@@ -190,7 +196,9 @@ class FCMService:
             scope="individual",
             data=data,
             image_url=image_url,
-            send_push=send_push
+            send_push=send_push,
+            sent_by_user_id=sent_by_user_id,
+            sent_by_role=sent_by_role,
         )
         return notification_ids[0] if notification_ids else None
 

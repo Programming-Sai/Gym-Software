@@ -85,6 +85,8 @@ class DieticianVerificationStatusSchema(BaseModel):
     submitted_at: datetime
     reviewed_at: Optional[datetime]
     rejection_reason: Optional[str]
+    withdrawn_at: Optional[datetime] = None
+    withdrawn_reason: Optional[str] = None
 
     model_config = {
         "from_attributes": True  # <-- replaces orm_mode in Pydantic v2

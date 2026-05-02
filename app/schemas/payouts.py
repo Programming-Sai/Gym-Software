@@ -5,7 +5,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-PayoutStatus = Literal["pending", "processing", "completed", "failed"]
+PayoutStatus = Literal["pending", "processing", "completed", "failed", "cancelled"]
+PayoutEventType = Literal[
+    "created",
+    "approved",
+    "process_attempt",
+    "provider_verification",
+    "provider_webhook",
+    "provider_error",
+    "cancelled",
+    "refreshed",
+]
 
 
 class PayoutCreateRequest(BaseModel):
@@ -20,6 +30,14 @@ class PayoutApproveRequest(BaseModel):
 
 class PayoutProcessRequest(BaseModel):
     retry: bool = False
+
+
+class PayoutCancelRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class PayoutRetryRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=500)
 
 
 class PayoutOut(BaseModel):
@@ -53,3 +71,13 @@ class PayoutOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+class PayoutEventOut(BaseModel):
+    type: PayoutEventType
+    at: datetime
+    data: dict[str, Any] = {}
+
+
+class PayoutEventsOut(BaseModel):
+    payout_id: str
+    events: list[PayoutEventOut]

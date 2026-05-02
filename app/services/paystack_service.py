@@ -213,6 +213,9 @@ class PaystackService:
             timeout=30,
         )
 
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+
         if response.status_code != 200:
             self._raise_for_paystack_error(response, "Failed to verify Paystack transfer")
 
@@ -257,3 +260,26 @@ class PaystackService:
             )
 
         return data["data"]
+
+    # -------------------------------------------------
+    # FETCH REFUND
+    # -------------------------------------------------
+    def fetch_refund(self, reference: str) -> dict[str, Any]:
+        """
+        Fetch refund details by the original transaction reference.
+        Paystack endpoint: GET /refund/{reference}
+        """
+        response = requests.get(
+            f"{PAYSTACK_BASE_URL}/refund/{reference}",
+            headers=self.headers,
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            self._raise_for_paystack_error(response, "Failed to fetch Paystack refund")
+
+        data = response.json()
+        if not data.get("status"):
+            raise HTTPException(status_code=400, detail=data.get("message", "Refund fetch failed"))
+
+        return data.get("data") or {}

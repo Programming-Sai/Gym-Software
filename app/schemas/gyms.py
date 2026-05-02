@@ -199,3 +199,15 @@ class GymReceivePaymentsUpsert(BaseModel):
         return v or None
 
 
+class GymOwnerVerificationStatusSchema(BaseModel):
+    application_id: str
+    status: str
+    submitted_at: datetime
+    reviewed_at: Optional[datetime]
+    rejection_reason: Optional[str]
+    withdrawn_at: Optional[datetime] = None
+    withdrawn_reason: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+

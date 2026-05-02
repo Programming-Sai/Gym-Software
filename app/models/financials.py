@@ -138,7 +138,7 @@ class PaymentReconciliationEvent(Base):
     provider_event_id = Column(String, nullable=True)
     reference = Column(String, nullable=False)
     status = Column(
-        Enum("open", "resolved", "ignored", name="reconciliation_event_statuses"),
+        Enum("open", "flagged", "resolved", "ignored", name="reconciliation_event_statuses"),
         nullable=False,
         server_default="open",
     )
@@ -172,7 +172,7 @@ class Payout(Base):
     net_amount = Column(DECIMAL(12, 2), nullable=False)  # amount - fee (what gym actually gets)
     
     status = Column(
-        Enum("pending", "processing", "completed", "failed", name="payout_statuses"),
+        Enum("pending", "processing", "completed", "failed", "cancelled", name="payout_statuses"),
         nullable=False,
         server_default="pending"
     )

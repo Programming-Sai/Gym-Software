@@ -20,6 +20,10 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     notification_id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+
+    # Optional attribution for audit/support (who/what created the notification).
+    sent_by_user_id = Column(String, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
+    sent_by_role = Column(String(32), nullable=True)
     
     type = Column(
         Enum(

@@ -2,7 +2,7 @@
 
 # Core authentication
 from .users import User
-from .auth import Session, OTP, OAuthAccount, PasswordResetToken
+from .auth import Session, OTP, OAuthAccount, PasswordResetToken, AdminInvite
 
 # Gym management
 from .gyms import Gym, GymPhoto, GymDocument
@@ -18,6 +18,9 @@ from .financials import (
     PaymentReconciliationEvent,
     Payout,
 )
+
+# Audit logs
+from .audit_logs import AuditLog
 
 # File management
 from .files import File
@@ -44,7 +47,7 @@ from .relationships import UserFavoriteGym, ClientAssignment, GymStaff
 __all__ = [
     # Authentication
     "User",
-    "Session", "OTP", "OAuthAccount", "PasswordResetToken",
+    "Session", "OTP", "OAuthAccount", "PasswordResetToken", "AdminInvite",
     
     # Gym
     "Gym", "GymPhoto", "GymDocument",
@@ -54,6 +57,9 @@ __all__ = [
     
     # Financial
     "SubscriptionTier", "Subscription", "Payment", "PaymentReconciliationEvent", "Payout",
+
+    # Audit logs
+    "AuditLog",
     
     # Files
     "File",

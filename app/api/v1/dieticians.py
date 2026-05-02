@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, File as FastAPIFile, HTTPException, status
+from datetime import datetime
+from fastapi import APIRouter, Depends, Query, UploadFile, Form, File as FastAPIFile, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -16,12 +17,15 @@ from app.schemas.dietician import (
     DieticianListingSchema,
     DieticianVerificationStatusSchema,
 )
+from app.schemas.verifications import VerificationWithdrawRequest
+from app.services.audit_log_service import write_audit_log
+from app.models.verifications import VerificationApplication
 
 router = APIRouter(tags=["Dieticians"])
 
 
 def is_admin(user) -> bool:
-    return user and user.role == "admin"
+    return user and user.role in {"admin", "superadmin"}
 
 
 def is_self(user, dietician: Dietician) -> bool:
@@ -128,6 +132,7 @@ def list_dieticians(
 
 @router.post("/request-verification")
 async def request_dietician_verification(
+    request: Request,
     bio: str = Form(...),
     experience_years: int = Form(...),
     specializations: str = Form(...),
@@ -154,6 +159,24 @@ async def request_dietician_verification(
         uploader_id=current_user.user_id
     )
 
+    write_audit_log(
+        db,
+        category="crud",
+        action="dietician.verification.requested",
+        entity_type="verification_application",
+        entity_id=application.application_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={
+            "applicant_type": "dietician",
+            "applicant_id": current_user.user_id,
+            "document_types": [dt.strip() for dt in document_types.split(",") if dt.strip()],
+            "file_count": len(files),
+        },
+    )
+    db.commit()
+
     return {
         "application_id": application.application_id,
         "status": application.status,
@@ -162,7 +185,7 @@ async def request_dietician_verification(
 
 
 @router.post(
-    "/dieticians/{dietician_id}/assignments",
+    "/{dietician_id}/assignments",
     response_model=ClientAssignmentSchema,
     status_code=status.HTTP_201_CREATED
 )
@@ -310,3 +333,65 @@ def get_my_verification_status(
 
     applications = crud_dietician.get_verification_requests(db, current_user.user_id)
     return applications
+
+
+@router.post("/me/verification/{application_id}/withdraw")
+def withdraw_my_verification_request(
+    application_id: str,
+    payload: VerificationWithdrawRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role != "dietician":
+        raise HTTPException(status_code=403, detail="Only dieticians can access this")
+
+    application = (
+        db.query(VerificationApplication)
+        .filter(
+            VerificationApplication.application_id == application_id,
+            VerificationApplication.applicant_type == "dietician",
+            VerificationApplication.applicant_id == current_user.user_id,
+        )
+        .first()
+    )
+    if not application:
+        raise HTTPException(status_code=404, detail="Verification application not found")
+
+    if application.status in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail=f"Cannot withdraw an application in status={application.status}")
+    if application.status == "withdrawn":
+        raise HTTPException(status_code=400, detail="Application already withdrawn")
+    if application.status not in {"pending", "more_info_required"}:
+        raise HTTPException(status_code=400, detail=f"Cannot withdraw an application in status={application.status}")
+
+    application.status = "withdrawn"
+    application.withdrawn_reason = payload.reason.strip()
+    application.withdrawn_at = datetime.utcnow()
+    application.withdrawn_by = current_user.user_id
+
+    db.add(application)
+    write_audit_log(
+        db,
+        category="crud",
+        action="dietician.verification.withdrawn",
+        entity_type="verification_application",
+        entity_id=application.application_id,
+        actor=current_user,
+        request=request,
+        success=True,
+        metadata={
+            "applicant_type": "dietician",
+            "applicant_id": current_user.user_id,
+            "withdraw_reason": payload.reason,
+        },
+    )
+    db.commit()
+    db.refresh(application)
+
+    return {
+        "application_id": application.application_id,
+        "status": application.status,
+        "withdrawn_at": application.withdrawn_at,
+        "withdrawn_reason": application.withdrawn_reason,
+    }

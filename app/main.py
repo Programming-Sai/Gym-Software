@@ -3,15 +3,26 @@ from app.api.health import router as health_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.gyms import router as gym_router
 from app.api.v1.users import router as user_router
-from app.api.v1.announcements import router as announcement_router
 from app.api.v1.payments import router as payment_router
 from app.api.v1.dieticians import router as dietician_router
 from app.api.v1.subscription import router as subscription_router
 from app.api.v1.messaging import router as messaging_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.admin_payouts import router as admin_payouts_router
+from app.api.v1.admin_audit_logs import router as admin_audit_logs_router
+from app.api.v1.admin_verifications import router as admin_verifications_router
+from app.api.v1.admin_invites import router as admin_invites_router
+from app.api.v1.admin_users import router as admin_users_router
+from app.api.v1.admin_platform_announcements import router as admin_platform_announcements_router
+from app.api.v1.admin_platform_notifications import router as admin_platform_notifications_router
+from app.api.v1.admin_gyms import router as admin_gyms_router
+from app.api.v1.admin_dieticians import router as admin_dieticians_router
+from app.api.v1.admin_reconciliation import router as admin_reconciliation_router
+from app.api.v1.admin_payments import router as admin_payments_router
+from app.api.v1.admin_subscriptions import router as admin_subscriptions_router
 from app.api.v1.paystack_webhook import router as paystack_webhook_router
 from app.api.ws.chat import websocket_endpoint
+from app.middleware.request_context import RequestContextMiddleware
 from fastapi.openapi.utils import get_openapi
 
 app = FastAPI(
@@ -19,6 +30,7 @@ app = FastAPI(
     version="1.0",
     docs_url="/",
 )
+app.add_middleware(RequestContextMiddleware)
 
 
 def custom_openapi():
@@ -146,11 +158,21 @@ app.include_router(dietician_router, prefix=base + "/dieticians")
 app.include_router(auth_router, prefix=base + "/auth")
 app.include_router(gym_router, prefix=base + "/gyms")
 app.include_router(user_router, prefix=base + "/users")
-app.include_router(announcement_router, prefix=base + "/announcements")
 app.include_router(payment_router, prefix=base + "/payments")
 app.include_router(subscription_router, prefix=base + "/subscription-plans")
 app.include_router(notifications_router, prefix=base + "/notifications")
 app.include_router(messaging_router, prefix=base + "/messages")
 app.include_router(admin_payouts_router, prefix=base + "/admin/payouts")
+app.include_router(admin_audit_logs_router, prefix=base + "/admin/audit-logs")
+app.include_router(admin_verifications_router, prefix=base + "/admin/verifications")
+app.include_router(admin_invites_router, prefix=base + "/admin/admin-invites")
+app.include_router(admin_users_router, prefix=base + "/admin/users")
+app.include_router(admin_platform_announcements_router, prefix=base + "/admin/platform/announcements")
+app.include_router(admin_platform_notifications_router, prefix=base + "/admin/platform/notifications")
+app.include_router(admin_gyms_router, prefix=base + "/admin/gyms")
+app.include_router(admin_dieticians_router, prefix=base + "/admin/dieticians")
+app.include_router(admin_reconciliation_router, prefix=base + "/admin/payments/reconciliation-events")
+app.include_router(admin_payments_router, prefix=base + "/admin/payments")
+app.include_router(admin_subscriptions_router, prefix=base + "/admin/subscriptions")
 app.include_router(paystack_webhook_router, prefix=base + "/paystack")
 app.add_api_websocket_route("/ws/chat", websocket_endpoint, name="websocket_messages")
